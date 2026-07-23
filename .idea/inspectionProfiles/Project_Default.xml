@@ -1,0 +1,78 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="pandas" />
+          <option value="scipy" />
+          <option value="shapely" />
+          <option value="numpy" />
+          <option value="pillow" />
+          <option value="Cartopy" />
+          <option value="certifi" />
+          <option value="chardet" />
+          <option value="colorama" />
+          <option value="contourpy" />
+          <option value="cycler" />
+          <option value="filelock" />
+          <option value="fonttools" />
+          <option value="fsspec" />
+          <option value="Jinja2" />
+          <option value="joblib" />
+          <option value="kiwisolver" />
+          <option value="lxml" />
+          <option value="MarkupSafe" />
+          <option value="matplotlib" />
+          <option value="mpmath" />
+          <option value="networkx" />
+          <option value="opencv-python" />
+          <option value="packaging" />
+          <option value="PyMuPDF" />
+          <option value="pyparsing" />
+          <option value="pyproj" />
+          <option value="PyQt5" />
+          <option value="PyQt5-Qt5" />
+          <option value="PyQt5_sip" />
+          <option value="pyshp" />
+          <option value="python-dateutil" />
+          <option value="python-docx" />
+          <option value="pytz" />
+          <option value="rnx" />
+          <option value="scikit-learn" />
+          <option value="seaborn" />
+          <option value="six" />
+          <option value="sympy" />
+          <option value="threadpoolctl" />
+          <option value="torch" />
+          <option value="tqdm" />
+          <option value="typing_extensions" />
+          <option value="tzdata" />
+          <option value="geopandas" />
+          <option value="folium" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyStubPackagesAdvertiser" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="pandas" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyStubPackagesCompatibilityInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredStubPackages">
+        <list>
+          <option value="pandas-stubs~=3.0.3" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredIdentifiers">
+        <list>
+          <option value="matplotlib.*" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
