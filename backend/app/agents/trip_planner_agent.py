@@ -237,7 +237,7 @@ class MultiAgentTripPlanner:
     
     def plan_trip(self, request: TripRequest) -> TripPlan:
         """
-        使用多智能体协作生成旅行计划
+        使用多智能体协作生成旅行计划（并行化版本）
 
         Args:
             request: 旅行请求
@@ -256,36 +256,55 @@ class MultiAgentTripPlanner:
             print(f"偏好: {', '.join(request.preferences) if request.preferences else '无'}")
             print(f"{'='*60}\n")
 
-            # 步骤1: 景点搜索Agent搜索景点
-            print("📍 步骤1: 搜索景点...")
-            all_attraction_results = []
-            for city in request.cities:  #遍历每个城市
-                attraction_query = self._build_attraction_query_for_city(request, city)
-                attraction_response = self.attraction_agent.run(attraction_query)
-                all_attraction_results.append(f"【{city}】\n{attraction_response}")
-                print(f"  {city} 景点搜索结果: {attraction_response[:100]}...")
-            combined_attractions = "\n\n".join(all_attraction_results)
-            print()
+            # 使用线程池并行执行景点搜索、天气查询、酒店推荐
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(request.cities) * 3) as executor:
+                # 提交所有城市的景点搜索任务
+                attraction_futures = {}
+                for city in request.cities:
+                    future = executor.submit(
+                        self._run_attraction_agent, request, city
+                    )
+                    attraction_futures[city] = future
 
-            # 步骤2: 天气查询Agent查询天气
-            print("🌤️  步骤2: 查询天气...")
-            all_weather_results = []
-            for city in request.cities:  # 【修改】遍历每个城市
-                weather_query = f"请查询{city}的天气信息"
-                weather_response = self.weather_agent.run(weather_query)
-                all_weather_results.append(f"【{city}】\n{weather_response}")
-            combined_weather = "\n\n".join(all_weather_results)
-            print()
+                # 提交所有城市的天气查询任务
+                weather_futures = {}
+                for city in request.cities:
+                    future = executor.submit(
+                        self._run_weather_agent, city
+                    )
+                    weather_futures[city] = future
 
-            # 步骤3: 酒店推荐Agent搜索酒店
-            print("🏨 步骤3: 搜索酒店...")
-            all_hotel_results = []
-            for city in request.cities:  # 【修改】遍历每个城市
-                hotel_query = f"请搜索{city}的{request.accommodation}酒店"
-                hotel_response = self.hotel_agent.run(hotel_query)
-                all_hotel_results.append(f"【{city}】\n{hotel_response}")
-            combined_hotels = "\n\n".join(all_hotel_results)
-            print()
+                # 提交所有城市的酒店搜索任务
+                hotel_futures = {}
+                for city in request.cities:
+                    future = executor.submit(
+                        self._run_hotel_agent, request, city
+                    )
+                    hotel_futures[city] = future
+
+                # 收集景点搜索结果
+                all_attraction_results = []
+                for city in request.cities:
+                    result = attraction_futures[city].result()
+                    all_attraction_results.append(f"【{city}】\n{result}")
+                combined_attractions = "\n\n".join(all_attraction_results)
+                print("✅ 景点搜索完成\n")
+
+                # 收集天气查询结果
+                all_weather_results = []
+                for city in request.cities:
+                    result = weather_futures[city].result()
+                    all_weather_results.append(f"【{city}】\n{result}")
+                combined_weather = "\n\n".join(all_weather_results)
+                print("✅ 天气查询完成\n")
+
+                # 收集酒店搜索结果
+                all_hotel_results = []
+                for city in request.cities:
+                    result = hotel_futures[city].result()
+                    all_hotel_results.append(f"【{city}】\n{result}")
+                combined_hotels = "\n\n".join(all_hotel_results)
+                print("✅ 酒店搜索完成\n")
 
             # 步骤4: 行程规划Agent整合信息生成计划
             print("📋 步骤4: 生成行程计划...")
@@ -309,6 +328,30 @@ class MultiAgentTripPlanner:
             import traceback
             traceback.print_exc()
             return self._create_fallback_plan(request)
+
+    def _run_attraction_agent(self, request: TripRequest, city: str) -> str:
+        """在独立线程中运行景点搜索Agent"""
+        print(f"  📍 搜索{city}景点...")
+        attraction_query = self._build_attraction_query_for_city(request, city)
+        response = self.attraction_agent.run(attraction_query)
+        print(f"  {city} 景点搜索完成: {response[:80]}...")
+        return response
+
+    def _run_weather_agent(self, city: str) -> str:
+        """在独立线程中运行天气查询Agent"""
+        print(f"  🌤️  查询{city}天气...")
+        weather_query = f"请查询{city}的天气信息"
+        response = self.weather_agent.run(weather_query)
+        print(f"  {city} 天气查询完成: {response[:80]}...")
+        return response
+
+    def _run_hotel_agent(self, request: TripRequest, city: str) -> str:
+        """在独立线程中运行酒店搜索Agent"""
+        print(f"  🏨 搜索{city}酒店...")
+        hotel_query = f"请搜索{city}的{request.accommodation}酒店"
+        response = self.hotel_agent.run(hotel_query)
+        print(f"  {city} 酒店搜索完成: {response[:80]}...")
+        return response
     
     def _build_attraction_query_for_city(self, request: TripRequest,city: str) -> str:
         """为单个城市构建景点搜索查询 — 直接包含工具调用"""
@@ -465,4 +508,3 @@ def get_trip_planner_agent() -> MultiAgentTripPlanner:
         _multi_agent_planner = MultiAgentTripPlanner()
 
     return _multi_agent_planner
-

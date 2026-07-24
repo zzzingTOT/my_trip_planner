@@ -1,5 +1,6 @@
 """旅行规划API路由"""
 
+import asyncio
 from fastapi import APIRouter, HTTPException
 from ...models.schemas import (
     TripRequest,
@@ -40,9 +41,9 @@ async def plan_trip(request: TripRequest):
         print("🔄 获取多智能体系统实例...")
         agent = get_trip_planner_agent()
 
-        # 生成旅行计划
+        # 生成旅行计划（在后台线程中执行，避免阻塞事件循环）
         print("🚀 开始生成旅行计划...")
-        trip_plan = agent.plan_trip(request)
+        trip_plan = await asyncio.to_thread(agent.plan_trip, request)
 
         print("✅ 旅行计划生成成功,准备返回响应\n")
 
@@ -84,4 +85,3 @@ async def health_check():
             status_code=503,
             detail=f"服务不可用: {str(e)}"
         )
-
