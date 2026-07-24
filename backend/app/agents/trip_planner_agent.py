@@ -282,36 +282,66 @@ class MultiAgentTripPlanner:
                     )
                     hotel_futures[city] = future
 
-                # 收集景点搜索结果
+                # 收集景点搜索结果（带超时保护，防止 LLM API 失败时无限阻塞）
+                AGENT_TIMEOUT = 180  # 单个 Agent 最长等待 3 分钟
                 all_attraction_results = []
                 for city in request.cities:
-                    result = attraction_futures[city].result()
-                    all_attraction_results.append(f"【{city}】\n{result}")
+                    try:
+                        result = attraction_futures[city].result(timeout=AGENT_TIMEOUT)
+                        all_attraction_results.append(f"【{city}】\n{result}")
+                    except concurrent.futures.TimeoutError:
+                        print(f"⚠️ {city}景点搜索超时（{AGENT_TIMEOUT}秒）")
+                        all_attraction_results.append(f"【{city}】\n（搜索超时，请稍后重试）")
+                    except Exception as e:
+                        print(f"⚠️ {city}景点搜索失败: {e}")
+                        all_attraction_results.append(f"【{city}】\n（搜索失败，请检查 LLM API 配置）")
                 combined_attractions = "\n\n".join(all_attraction_results)
                 print("✅ 景点搜索完成\n")
 
-                # 收集天气查询结果
+                # 收集天气查询结果（带超时保护）
                 all_weather_results = []
                 for city in request.cities:
-                    result = weather_futures[city].result()
-                    all_weather_results.append(f"【{city}】\n{result}")
+                    try:
+                        result = weather_futures[city].result(timeout=AGENT_TIMEOUT)
+                        all_weather_results.append(f"【{city}】\n{result}")
+                    except concurrent.futures.TimeoutError:
+                        print(f"⚠️ {city}天气查询超时（{AGENT_TIMEOUT}秒）")
+                        all_weather_results.append(f"【{city}】\n（查询超时）")
+                    except Exception as e:
+                        print(f"⚠️ {city}天气查询失败: {e}")
+                        all_weather_results.append(f"【{city}】\n（查询失败，请检查 LLM API 配置）")
                 combined_weather = "\n\n".join(all_weather_results)
                 print("✅ 天气查询完成\n")
 
-                # 收集酒店搜索结果
+                # 收集酒店搜索结果（带超时保护）
                 all_hotel_results = []
                 for city in request.cities:
-                    result = hotel_futures[city].result()
-                    all_hotel_results.append(f"【{city}】\n{result}")
+                    try:
+                        result = hotel_futures[city].result(timeout=AGENT_TIMEOUT)
+                        all_hotel_results.append(f"【{city}】\n{result}")
+                    except concurrent.futures.TimeoutError:
+                        print(f"⚠️ {city}酒店搜索超时（{AGENT_TIMEOUT}秒）")
+                        all_hotel_results.append(f"【{city}】\n（搜索超时）")
+                    except Exception as e:
+                        print(f"⚠️ {city}酒店搜索失败: {e}")
+                        all_hotel_results.append(f"【{city}】\n（搜索失败，请检查 LLM API 配置）")
                 combined_hotels = "\n\n".join(all_hotel_results)
                 print("✅ 酒店搜索完成\n")
 
-            # 步骤4: 行程规划Agent整合信息生成计划
+            # 步骤4: 行程规划Agent整合信息生成计划（带超时保护）
             print("📋 步骤4: 生成行程计划...")
             planner_query = self._build_planner_query(
                 request, combined_attractions, combined_weather, combined_hotels
             )
-            planner_response = self.planner_agent.run(planner_query)
+
+            # 规划 Agent 调用也用线程池加超时，防止 LLM 失败时无限阻塞
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as planner_executor:
+                planner_future = planner_executor.submit(self.planner_agent.run, planner_query)
+                try:
+                    planner_response = planner_future.result(timeout=300)  # 规划最长等 5 分钟
+                except concurrent.futures.TimeoutError:
+                    print("⚠️ 行程规划超时（300秒），将使用备用方案")
+                    return self._create_fallback_plan(request)
             print(f"行程规划结果: {planner_response[:300]}...\n")
 
             # 解析最终计划
