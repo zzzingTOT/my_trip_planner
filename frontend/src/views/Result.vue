@@ -46,6 +46,9 @@
             <a-menu-item key="budget" v-if="tripPlan.budget">
               <span>💰 预算明细</span>
             </a-menu-item>
+            <a-menu-item key="transport" v-if="tripPlan.inter_city_transport && tripPlan.inter_city_transport.length > 0">
+              <span>🚄 跨城交通</span>
+            </a-menu-item>
             <a-menu-item key="map">
               <span>📍 景点地图</span>
             </a-menu-item>
@@ -68,8 +71,19 @@
           <!-- 左侧:行程概览和预算明细 -->
           <div class="left-info">
             <!-- 行程概览 -->
-            <a-card id="overview" :title="`${tripPlan.city}旅行计划`" :bordered="false" class="overview-card">
+            <a-card id="overview" :bordered="false" class="overview-card">
+              <template #title>
+                <span>{{ tripPlan.cities.join(' → ') }}旅行计划</span>
+              </template>
               <div class="overview-content">
+                <div class="info-item">
+                  <span class="info-label">🏠 出发城市:</span>
+                  <span class="info-value">{{ tripPlan.departure_city }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">📍 目的地:</span>
+                  <span class="info-value">{{ tripPlan.cities.join(' → ') }}</span>
+                </div>
                 <div class="info-item">
                   <span class="info-label">📅 日期:</span>
                   <span class="info-value">{{ tripPlan.start_date }} 至 {{ tripPlan.end_date }}</span>
@@ -85,6 +99,10 @@
             <a-card id="budget" v-if="tripPlan.budget" title="💰 预算明细" :bordered="false" class="budget-card">
               <div class="budget-grid">
                 <div class="budget-item">
+                  <div class="budget-label">🚄 跨城交通</div>
+                  <div class="budget-value">¥{{ tripPlan.budget.total_inter_city_transport }}</div>
+                </div>
+                <div class="budget-item">
                   <div class="budget-label">景点门票</div>
                   <div class="budget-value">¥{{ tripPlan.budget.total_attractions }}</div>
                 </div>
@@ -97,13 +115,44 @@
                   <div class="budget-value">¥{{ tripPlan.budget.total_meals }}</div>
                 </div>
                 <div class="budget-item">
-                  <div class="budget-label">交通费用</div>
+                  <div class="budget-label">🚗 城内交通</div>
                   <div class="budget-value">¥{{ tripPlan.budget.total_transportation }}</div>
                 </div>
               </div>
               <div class="budget-total">
                 <span class="total-label">预估总费用</span>
                 <span class="total-value">¥{{ tripPlan.budget.total }}</span>
+              </div>
+            </a-card>
+
+            <!-- 跨城交通方案 -->
+            <a-card
+              id="transport"
+              v-if="tripPlan.inter_city_transport && tripPlan.inter_city_transport.length > 0"
+              title="🚄 跨城交通方案"
+              :bordered="false"
+              class="transport-card"
+            >
+              <div class="transport-list">
+                <div
+                  v-for="(transport, index) in tripPlan.inter_city_transport"
+                  :key="index"
+                  class="transport-item"
+                >
+                  <div class="transport-route">
+                    <span class="transport-from">{{ transport.from_city }}</span>
+                    <span class="transport-arrow">→</span>
+                    <span class="transport-to">{{ transport.to_city }}</span>
+                  </div>
+                  <div class="transport-detail">
+                    <a-tag :color="getTransportColor(transport.mode)">{{ transport.mode }}</a-tag>
+                    <span class="transport-duration">⏱️ {{ transport.duration }}</span>
+                    <span class="transport-cost">💰 ¥{{ transport.estimated_cost }}</span>
+                  </div>
+                  <div v-if="transport.description" class="transport-desc">
+                    💡 {{ transport.description }}
+                  </div>
+                </div>
               </div>
             </a-card>
           </div>
@@ -127,6 +176,7 @@
               <template #header>
                 <div class="day-header">
                   <span class="day-title">第{{ day.day_index + 1 }}天</span>
+                  <a-tag v-if="day.city" color="purple" style="margin-left: 8px;">{{ day.city }}</a-tag>
                   <span class="day-date">{{ day.date }}</span>
                 </div>
               </template>
@@ -424,6 +474,19 @@ const getMealLabel = (type: string): string => {
   return labels[type] || type
 }
 
+// 【新增】根据交通方式返回不同颜色标签
+const getTransportColor = (mode: string): string => {
+  const colorMap: Record<string, string> = {
+    '高铁': 'blue',
+    '动车': 'cyan',
+    '飞机': 'red',
+    '自驾': 'green',
+    '大巴': 'orange',
+    '火车': 'geekblue'
+  }
+  return colorMap[mode] || 'default'
+}
+
 // 加载所有景点图片
 const loadAttractionPhotos = async () => {
   if (!tripPlan.value) return
@@ -618,7 +681,7 @@ const exportAsImage = async () => {
 
     // 转换为图片并下载
     const link = document.createElement('a')
-    link.download = `旅行计划_${tripPlan.value?.city}_${new Date().getTime()}.png`
+    link.download = `旅行计划_${tripPlan.value?.cities?.join('_')}_${new Date().getTime()}.png`
     link.href = canvas.toDataURL('image/png')
     link.click()
 
@@ -777,7 +840,7 @@ const exportAsPDF = async () => {
       heightLeft -= 297
     }
 
-    pdf.save(`旅行计划_${tripPlan.value?.city}_${new Date().getTime()}.pdf`)
+    pdf.save(`旅行计划_${tripPlan.value?.cities?.join('_')}_${new Date().getTime()}.pdf`)
 
     message.success({ content: 'PDF导出成功!', key: 'export' })
   } catch (error: any) {
@@ -1429,6 +1492,63 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
     flex-direction: column;
     gap: 16px;
   }
+}
+
+/* 跨城交通方案 */
+.transport-card {
+  height: fit-content;
+}
+.transport-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.transport-item {
+  padding: 16px;
+  background: linear-gradient(135deg, #f0f7ff 0%, #e6f0ff 100%);
+  border-radius: 12px;
+  border: 1px solid #d6e4ff;
+  transition: all 0.3s ease;
+}
+.transport-item:hover {
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.15);
+  transform: translateY(-2px);
+}
+.transport-route {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.transport-from, .transport-to {
+  color: #1a1a1a;
+}
+.transport-arrow {
+  color: #1890ff;
+  font-size: 20px;
+}
+.transport-detail {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.transport-duration {
+  color: #666;
+  font-size: 14px;
+}
+.transport-cost {
+  color: #ff4d4f;
+  font-weight: 600;
+  font-size: 15px;
+}
+.transport-desc {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #888;
+  line-height: 1.5;
 }
 </style>
 

@@ -30,7 +30,8 @@ async def plan_trip(request: TripRequest):
     try:
         print(f"\n{'='*60}")
         print(f"📥 收到旅行规划请求:")
-        print(f"   城市: {request.city}")
+        print(f"   出发地: {request.departure_city}")
+        print(f"   目的地: {', '.join(request.cities)}")  
         print(f"   日期: {request.start_date} - {request.end_date}")
         print(f"   天数: {request.travel_days}")
         print(f"{'='*60}\n")

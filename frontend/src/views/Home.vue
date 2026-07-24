@@ -22,32 +22,67 @@
         layout="vertical"
         @finish="handleSubmit"
       >
-        <!-- 第一步:目的地和日期 -->
+        <!-- 第一步:出发地与目的地 -->
         <div class="form-section">
           <div class="section-header">
             <span class="section-icon">📍</span>
-            <span class="section-title">目的地与日期</span>
+            <span class="section-title">出发地与目的地</span>
           </div>
 
           <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item name="city" :rules="[{ required: true, message: '请输入目的地城市' }]">
+            <!-- 出发城市 - 带自动补全 -->
+            <a-col :span="6">
+              <a-form-item name="departure_city" :rules="[{ required: true, message: '请输入出发城市' }]">
                 <template #label>
-                  <span class="form-label">目的地城市</span>
+                  <span class="form-label">出发城市</span>
                 </template>
-                <a-input
-                  v-model:value="formData.city"
-                  placeholder="例如: 北京"
+                <a-auto-complete
+                  v-model:value="formData.departure_city"
+                  :options="departureCityOptions"
+                  placeholder="例如: 上海"
                   size="large"
                   class="custom-input"
+                  @search="handleDepartureCitySearch"
+                  :filter-option="false"
                 >
                   <template #prefix>
-                    <span style="color: #1890ff;">🏙️</span>
+                    <span style="color: #ff6b6b;">🏠</span>
                   </template>
-                </a-input>
+                  <template #option="{ value }">
+                    <div class="city-option">
+                      <span>{{ value }}</span>
+                    </div>
+                  </template>
+                </a-auto-complete>
               </a-form-item>
             </a-col>
-            <a-col :span="6">
+
+            <!-- 目的地城市 - 多选标签模式 + 自动补全 -->
+            <a-col :span="8">
+              <a-form-item name="cities" :rules="[{ required: true, message: '请至少添加一个目的地城市', type: 'array', min: 1 }]">
+                <template #label>
+                  <span class="form-label">目的地城市（可多选）</span>
+                </template>
+                <a-select
+                  v-model:value="formData.cities"
+                  mode="tags"
+                  size="large"
+                  class="custom-select"
+                  placeholder="输入城市名后按回车添加"
+                  :max-tag-count="5"
+                  :filter-option="false"
+                  :options="destinationCityOptions"
+                  @search="handleDestinationCitySearch"
+                  @change="handleCitiesChange"
+                >
+                </a-select>
+                <div v-if="formData.cities.length > 0" class="cities-hint">
+                  📍 {{ formData.cities.join(' → ') }}
+                </div>
+              </a-form-item>
+            </a-col>
+
+            <a-col :span="5">
               <a-form-item name="start_date" :rules="[{ required: true, message: '请选择开始日期' }]">
                 <template #label>
                   <span class="form-label">开始日期</span>
@@ -61,7 +96,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="6">
+            <a-col :span="5">
               <a-form-item name="end_date" :rules="[{ required: true, message: '请选择结束日期' }]">
                 <template #label>
                   <span class="form-label">结束日期</span>
@@ -75,16 +110,16 @@
                 />
               </a-form-item>
             </a-col>
+          </a-row>
+
+          <!-- 旅行天数显示 -->
+          <a-row>
             <a-col :span="4">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">旅行天数</span>
-                </template>
-                <div class="days-display-compact">
-                  <span class="days-value">{{ formData.travel_days }}</span>
-                  <span class="days-unit">天</span>
-                </div>
-              </a-form-item>
+              <div class="days-display">
+                <span class="days-label">旅行天数</span>
+                <span class="days-value">{{ formData.travel_days }}</span>
+                <span class="days-unit">天</span>
+              </div>
             </a-col>
           </a-row>
         </div>
@@ -100,7 +135,7 @@
             <a-col :span="8">
               <a-form-item name="transportation">
                 <template #label>
-                  <span class="form-label">交通方式</span>
+                  <span class="form-label">市内交通方式</span>
                 </template>
                 <a-select v-model:value="formData.transportation" size="large" class="custom-select">
                   <a-select-option value="公共交通">🚇 公共交通</a-select-option>
@@ -208,6 +243,7 @@ import { ref, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { generateTripPlan } from '@/services/api'
+import { searchCities } from '@/data/cities'
 import type { TripFormData } from '@/types'
 import type { Dayjs } from 'dayjs'
 
@@ -216,8 +252,14 @@ const loading = ref(false)
 const loadingProgress = ref(0)
 const loadingStatus = ref('')
 
+// 出发城市自动补全选项
+const departureCityOptions = ref<{ value: string; label: string }[]>([])
+// 目的地城市自动补全选项
+const destinationCityOptions = ref<{ value: string; label: string }[]>([])
+
 const formData = reactive<TripFormData & { start_date: Dayjs | null; end_date: Dayjs | null }>({
-  city: '',
+  departure_city: '',       // 出发城市，必填
+  cities: [],               // 目的地城市列表，至少一个
   start_date: null,
   end_date: null,
   travel_days: 1,
@@ -226,6 +268,30 @@ const formData = reactive<TripFormData & { start_date: Dayjs | null; end_date: D
   preferences: [],
   free_text_input: ''
 })
+
+// 出发城市搜索：用户每输入一个字，就从城市数据库里匹配
+const handleDepartureCitySearch = (keyword: string) => {
+  const matched = searchCities(keyword, 10)
+  departureCityOptions.value = matched.map(name => ({
+    value: name,
+    label: name
+  }))
+}
+
+// 目的地城市搜索：用于 a-select 的 tags 模式下拉选项
+const handleDestinationCitySearch = (keyword: string) => {
+  const matched = searchCities(keyword, 10)
+  destinationCityOptions.value = matched.map(name => ({
+    value: name,
+    label: name
+  }))
+}
+
+// 目的地城市变化时的回调
+const handleCitiesChange = (cities: string[]) => {
+  // 确保 cities 始终是字符串数组
+  formData.cities = cities
+}
 
 // 监听日期变化,自动计算旅行天数
 watch([() => formData.start_date, () => formData.end_date], ([start, end]) => {
@@ -273,7 +339,8 @@ const handleSubmit = async () => {
 
   try {
     const requestData: TripFormData = {
-      city: formData.city,
+      departure_city: formData.departure_city,       // 出发城市
+      cities: formData.cities,                        // 目的地城市列表
       start_date: formData.start_date.format('YYYY-MM-DD'),
       end_date: formData.end_date.format('YYYY-MM-DD'),
       travel_days: formData.travel_days,
@@ -508,25 +575,39 @@ const handleSubmit = async () => {
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
 }
 
-/* 天数显示 - 紧凑版 */
-.days-display-compact {
+/* 多城市提示文字 */
+.cities-hint {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #667eea;
+  font-weight: 500;
+}
+
+/* 城市自动补全下拉选项 */
+.city-option {
+  padding: 4px 0;
+  font-size: 14px;
+}
+
+/* 天数显示 */
+.days-display {
   display: flex;
   align-items: center;
-  justify-content: center;
-  height: 40px;
-  padding: 8px 16px;
+  gap: 8px;
+  padding: 6px 20px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 12px;
   color: white;
 }
-
-.days-display-compact .days-value {
-  font-size: 24px;
-  font-weight: 700;
-  margin-right: 4px;
+.days-display .days-label {
+  font-size: 13px;
+  opacity: 0.9;
 }
-
-.days-display-compact .days-unit {
+.days-display .days-value {
+  font-size: 28px;
+  font-weight: 700;
+}
+.days-display .days-unit {
   font-size: 14px;
 }
 
@@ -646,4 +727,3 @@ const handleSubmit = async () => {
   }
 }
 </style>
-

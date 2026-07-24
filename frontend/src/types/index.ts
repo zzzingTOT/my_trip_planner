@@ -37,17 +37,31 @@ export interface Hotel {
   estimated_cost?: number
 }
 
+
+// 跨城交通信息
+export interface InterCityTransport {
+  from_city: string
+  to_city: string
+  mode: string          // 高铁/飞机/自驾/大巴/动车
+  duration: string      // 例如 "约4.5小时"
+  estimated_cost: number
+  description: string
+}
+
+
 export interface Budget {
   total_attractions: number
   total_hotels: number
   total_meals: number
   total_transportation: number
+  total_inter_city_transport: number
   total: number
 }
 
 export interface DayPlan {
   date: string
   day_index: number
+  city: string         // 当天所在城市
   description: string
   transportation: string
   accommodation: string
@@ -67,17 +81,20 @@ export interface WeatherInfo {
 }
 
 export interface TripPlan {
-  city: string
+  departure_city: string
+  cities: string[]
   start_date: string
   end_date: string
   days: DayPlan[]
   weather_info: WeatherInfo[]
   overall_suggestions: string
   budget?: Budget
+  inter_city_transport: InterCityTransport[]
 }
 
 export interface TripFormData {
-  city: string
+  departure_city: string
+  cities: string[]
   start_date: string
   end_date: string
   travel_days: number
