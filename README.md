@@ -1,7 +1,19 @@
-# HelloAgents智能旅行助手 🌍✈️
+# HelloAgents Trip Planner 个人优化版
 
-基于HelloAgents框架构建的智能旅行规划助手,集成高德地图MCP服务,提供个性化的旅行计划生成。
+原始来源：https://github.com/datawhalechina/hello-agents/tree/main/code/chapter13/helloagents-trip-planner
 
+## 开源协议
+本衍生项目遵循 **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)**
+完整协议文本见仓库根目录 LICENSE 文件。
+协议核心约束：
+1. 署名：必须保留原作者版权信息；
+2. 非商用：禁止任何商业盈利场景使用；
+3. 相同共享：二次修改分发必须沿用本协议开源。
+
+## 个人优化说明
+
+
+说明：本仓库独立维护，不会向原上游仓库提交PR。
 ## ✨ 功能特点
 
 - 🤖 **AI驱动的旅行规划**: 基于HelloAgents框架的SimpleAgent,智能生成详细的多日旅程
