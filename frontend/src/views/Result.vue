@@ -160,7 +160,39 @@
           <!-- 右侧:地图 -->
           <div class="right-map">
             <a-card id="map" title="📍 景点地图" :bordered="false" class="map-card">
-              <div id="amap-container" style="width: 100%; height: 100%"></div>
+              <!-- 地图加载失败时的降级提示 -->
+              <div v-if="mapLoadError" class="map-error-fallback">
+                <div class="map-error-icon">🗺️</div>
+                <div class="map-error-title">地图加载失败</div>
+                <div class="map-error-reason">{{ mapErrorMessage }}</div>
+                <div class="map-error-tips">
+                  <p><strong>可能的原因：</strong></p>
+                  <ul>
+                    <li>高德地图 JS API Key 未配置或已过期</li>
+                    <li>Key 未在高德控制台开启"JS API"服务</li>
+                    <li>Key 的安全域名未包含当前访问地址</li>
+                    <li>网络连接异常</li>
+                  </ul>
+                  <p><strong>解决办法：</strong></p>
+                  <ol>
+                    <li>前往 <a href="https://console.amap.com/dev/key/app" target="_blank">高德开放平台控制台</a></li>
+                    <li>确认 Key 已开启"Web端 JS API"服务</li>
+                    <li>在 <code>frontend/.env</code> 中设置 <code>VITE_AMAP_WEB_JS_KEY=你的Key</code></li>
+                    <li>重启前端开发服务器（<code>npm run dev</code>）</li>
+                  </ol>
+                </div>
+                <a-button type="primary" @click="retryLoadMap" :loading="mapRetrying">
+                  🔄 重新加载地图
+                </a-button>
+              </div>
+              <!-- 地图加载中 -->
+              <div v-else-if="mapLoading" class="map-loading-state">
+                <div class="map-loading-spinner"></div>
+                <div class="map-loading-text">正在加载地图...</div>
+                <div class="map-loading-sub">获取高德地图 SDK，请稍候</div>
+              </div>
+              <!-- 地图正常加载 -->
+              <div v-else id="amap-container" style="width: 100%; height: 100%"></div>
             </a-card>
           </div>
         </div>
@@ -375,6 +407,10 @@ const attractionPhotos = ref<Record<string, string>>({})
 const activeSection = ref('overview')
 const activeDays = ref<number[]>([0]) // 默认展开第一天
 let map: any = null
+const mapLoadError = ref(false)        // 地图是否加载失败
+const mapErrorMessage = ref('')         // 地图加载失败的具体原因
+const mapRetrying = ref(false)          // 是否正在重试加载地图
+const mapLoading = ref(false)          // 地图是否正在加载中
 
 onMounted(async () => {
   const data = sessionStorage.getItem('tripPlan')
@@ -491,11 +527,12 @@ const getTransportColor = (mode: string): string => {
 const loadAttractionPhotos = async () => {
   if (!tripPlan.value) return
 
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
   const promises: Promise<void>[] = []
 
   tripPlan.value.days.forEach(day => {
     day.attractions.forEach(attraction => {
-      const promise = fetch(`http://localhost:8000/api/poi/photo?name=${encodeURIComponent(attraction.name)}`)
+      const promise = fetch(`${apiBase}/api/poi/photo?name=${encodeURIComponent(attraction.name)}`)
         .then(res => res.json())
         .then(data => {
           if (data.success && data.data.photo_url) {
@@ -892,29 +929,84 @@ const restoreMap = () => {
   }
 }
 
+// 计算地图默认中心点（根据目的地第一个有坐标的景点）
+const getMapCenter = (): [number, number] => {
+  if (!tripPlan.value) return [116.397128, 39.916527] // 默认北京
+
+  for (const day of tripPlan.value.days) {
+    for (const attr of day.attractions) {
+      if (attr.location?.longitude && attr.location?.latitude) {
+        return [attr.location.longitude, attr.location.latitude]
+      }
+    }
+  }
+  return [116.397128, 39.916527] // 兜底默认北京
+}
+
 // 初始化地图
 const initMap = async () => {
+  // 1. 前置检查：API Key 是否配置
+  const amapKey = import.meta.env.VITE_AMAP_WEB_JS_KEY
+  if (!amapKey || amapKey === 'your_amap_web_js_key_here') {
+    mapLoadError.value = true
+    mapErrorMessage.value = '未配置高德地图 JS API Key（VITE_AMAP_WEB_JS_KEY）'
+    console.error('❌ 地图加载失败: 缺少 VITE_AMAP_WEB_JS_KEY 环境变量')
+    return
+  }
+
+  mapLoading.value = true
+  mapLoadError.value = false
+  mapErrorMessage.value = ''
+
   try {
     const AMap = await AMapLoader.load({
-      key: import.meta.env.VITE_AMAP_WEB_JS_KEY,  // 高德地图Web端(JS API) Key
+      key: amapKey,
       version: '2.0',
       plugins: ['AMap.Marker', 'AMap.Polyline', 'AMap.InfoWindow']
     })
 
-    // 创建地图实例
+    // 创建地图实例，使用动态中心点
+    const center = getMapCenter()
     map = new AMap.Map('amap-container', {
       zoom: 12,
-      center: [116.397128, 39.916527], // 默认中心点(北京)
+      center: center,
       viewMode: '3D'
     })
 
     // 添加景点标记
     addAttractionMarkers(AMap)
 
-    message.success('地图加载成功')
-  } catch (error) {
+    mapLoading.value = false
+    mapLoadError.value = false
+    mapErrorMessage.value = ''
+  } catch (error: any) {
+    mapLoading.value = false
+    mapLoadError.value = true
     console.error('地图加载失败:', error)
-    message.error('地图加载失败')
+
+    // 2. 根据错误信息给出不同的提示
+    const errMsg = error?.message || error?.toString() || ''
+    if (errMsg.includes('INVALID_USER_KEY') || errMsg.includes('无效')) {
+      mapErrorMessage.value = '高德地图 Key 无效，请检查是否已正确配置 VITE_AMAP_WEB_JS_KEY'
+    } else if (errMsg.includes('key') && errMsg.includes('expired')) {
+      mapErrorMessage.value = '高德地图 Key 已过期，请前往控制台续期'
+    } else if (errMsg.includes('403') || errMsg.includes('Forbidden')) {
+      mapErrorMessage.value = '高德地图 Key 权限不足，请确认已开启"Web端 JS API"服务'
+    } else if (errMsg.includes('Network') || errMsg.includes('fetch') || errMsg.includes('timeout')) {
+      mapErrorMessage.value = '网络连接失败，无法加载高德地图 SDK，请检查网络'
+    } else {
+      mapErrorMessage.value = `地图加载失败: ${errMsg.substring(0, 100)}`
+    }
+  }
+}
+
+// 重试加载地图
+const retryLoadMap = async () => {
+  mapRetrying.value = true
+  try {
+    await initMap()
+  } finally {
+    mapRetrying.value = false
   }
 }
 
@@ -1549,6 +1641,118 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   font-size: 13px;
   color: #888;
   line-height: 1.5;
+}
+
+/* ========== 地图错误降级 UI ========== */
+.map-error-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 400px;
+  padding: 40px 24px;
+  text-align: center;
+  background: linear-gradient(135deg, #fafafa 0%, #f0f0f0 100%);
+  border-radius: 0 0 12px 12px;
+}
+
+.map-error-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  animation: float 3s ease-in-out infinite;
+}
+
+.map-error-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #ff4d4f;
+  margin-bottom: 8px;
+}
+
+.map-error-reason {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 20px;
+  padding: 8px 16px;
+  background: #fff2f0;
+  border: 1px solid #ffccc7;
+  border-radius: 6px;
+  max-width: 500px;
+}
+
+.map-error-tips {
+  text-align: left;
+  font-size: 13px;
+  color: #555;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  max-width: 500px;
+  line-height: 1.8;
+}
+
+.map-error-tips p {
+  margin: 0 0 6px 0;
+}
+
+.map-error-tips ul,
+.map-error-tips ol {
+  margin: 4px 0 12px 0;
+  padding-left: 20px;
+}
+
+.map-error-tips code {
+  background: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: #d4380d;
+}
+
+/* ========== 地图加载中状态 ========== */
+.map-loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 400px;
+  background: linear-gradient(135deg, #fafafa 0%, #f0f0f0 100%);
+  border-radius: 0 0 12px 12px;
+}
+
+.map-loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid #e8e8e8;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 16px;
+}
+
+.map-loading-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 6px;
+}
+
+.map-loading-sub {
+  font-size: 13px;
+  color: #999;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
 }
 </style>
 

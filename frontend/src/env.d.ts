@@ -4,6 +4,8 @@
 // 自定义你的环境变量
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL: string
+  readonly VITE_AMAP_WEB_KEY: string
+  readonly VITE_AMAP_WEB_JS_KEY: string
 }
 
 interface ImportMeta {
