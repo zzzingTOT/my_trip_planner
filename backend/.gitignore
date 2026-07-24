@@ -49,3 +49,5 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# 根目录的问题记录文件
+../problem_record/
