@@ -160,39 +160,44 @@
           <!-- 右侧:地图 -->
           <div class="right-map">
             <a-card id="map" title="📍 景点地图" :bordered="false" class="map-card">
-              <!-- 地图加载失败时的降级提示 -->
-              <div v-if="mapLoadError" class="map-error-fallback">
-                <div class="map-error-icon">🗺️</div>
-                <div class="map-error-title">地图加载失败</div>
-                <div class="map-error-reason">{{ mapErrorMessage }}</div>
-                <div class="map-error-tips">
-                  <p><strong>可能的原因：</strong></p>
-                  <ul>
-                    <li>高德地图 JS API Key 未配置或已过期</li>
-                    <li>Key 未在高德控制台开启"JS API"服务</li>
-                    <li>Key 的安全域名未包含当前访问地址</li>
-                    <li>网络连接异常</li>
-                  </ul>
-                  <p><strong>解决办法：</strong></p>
-                  <ol>
-                    <li>前往 <a href="https://console.amap.com/dev/key/app" target="_blank">高德开放平台控制台</a></li>
-                    <li>确认 Key 已开启"Web端 JS API"服务</li>
-                    <li>在 <code>frontend/.env</code> 中设置 <code>VITE_AMAP_WEB_JS_KEY=你的Key</code></li>
-                    <li>重启前端开发服务器（<code>npm run dev</code>）</li>
-                  </ol>
+              <!-- 地图容器始终存在于DOM中，错误/加载状态覆盖在上面 -->
+              <div class="map-wrapper">
+                <!-- 地图容器：始终渲染，不参与v-if切换 -->
+                <div id="amap-container" class="map-container"></div>
+
+                <!-- 地图加载失败时的降级提示（覆盖层） -->
+                <div v-if="mapLoadError" class="map-error-fallback">
+                  <div class="map-error-icon">🗺️</div>
+                  <div class="map-error-title">地图加载失败</div>
+                  <div class="map-error-reason">{{ mapErrorMessage }}</div>
+                  <div class="map-error-tips">
+                    <p><strong>可能的原因：</strong></p>
+                    <ul>
+                      <li>高德地图 JS API Key 未配置或已过期</li>
+                      <li>Key 未在高德控制台开启"JS API"服务</li>
+                      <li>Key 的安全域名未包含当前访问地址</li>
+                      <li>网络连接异常</li>
+                    </ul>
+                    <p><strong>解决办法：</strong></p>
+                    <ol>
+                      <li>前往 <a href="https://console.amap.com/dev/key/app" target="_blank">高德开放平台控制台</a></li>
+                      <li>确认 Key 已开启"Web端 JS API"服务</li>
+                      <li>在 <code>frontend/.env</code> 中设置 <code>VITE_AMAP_WEB_JS_KEY=你的Key</code></li>
+                      <li>重启前端开发服务器（<code>npm run dev</code>）</li>
+                    </ol>
+                  </div>
+                  <a-button type="primary" @click="retryLoadMap" :loading="mapRetrying">
+                    🔄 重新加载地图
+                  </a-button>
                 </div>
-                <a-button type="primary" @click="retryLoadMap" :loading="mapRetrying">
-                  🔄 重新加载地图
-                </a-button>
+
+                <!-- 地图加载中（覆盖层） -->
+                <div v-if="mapLoading && !mapLoadError" class="map-loading-state">
+                  <div class="map-loading-spinner"></div>
+                  <div class="map-loading-text">正在加载地图...</div>
+                  <div class="map-loading-sub">获取高德地图 SDK，请稍候</div>
+                </div>
               </div>
-              <!-- 地图加载中 -->
-              <div v-else-if="mapLoading" class="map-loading-state">
-                <div class="map-loading-spinner"></div>
-                <div class="map-loading-text">正在加载地图...</div>
-                <div class="map-loading-sub">获取高德地图 SDK，请稍候</div>
-              </div>
-              <!-- 地图正常加载 -->
-              <div v-else id="amap-container" style="width: 100%; height: 100%"></div>
             </a-card>
           </div>
         </div>
@@ -416,11 +421,13 @@ onMounted(async () => {
   const data = sessionStorage.getItem('tripPlan')
   if (data) {
     tripPlan.value = JSON.parse(data)
-    // 加载景点图片
-    await loadAttractionPhotos()
-    // 等待DOM渲染完成后初始化地图
+    // 图片加载和地图初始化并行执行，互不阻塞
+    // nextTick 确保 DOM 渲染完成后再初始化地图
     await nextTick()
-    initMap()
+    await Promise.all([
+      loadAttractionPhotos(),
+      initMap()
+    ])
   }
 })
 
@@ -1414,11 +1421,29 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 .map-card {
   height: 100%;
   min-height: 500px;
+  display: flex;
+  flex-direction: column;
 }
 
 .map-card :deep(.ant-card-body) {
-  height: calc(100% - 57px);
+  flex: 1;
+  height: 0;  /* flex子元素需要height:0才能由flex正确撑开 */
   padding: 0;
+  overflow: hidden;
+}
+
+/* 地图包裹容器：作为覆盖层的定位参考 */
+.map-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* 地图容器：始终渲染，始终有明确尺寸 */
+.map-container {
+  width: 100%;
+  height: 100%;
+  min-height: 450px;
 }
 
 /* 每日行程卡片 */
@@ -1643,18 +1668,22 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   line-height: 1.5;
 }
 
-/* ========== 地图错误降级 UI ========== */
+/* ========== 地图错误降级 UI（覆盖层） ========== */
 .map-error-fallback {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  min-height: 400px;
   padding: 40px 24px;
   text-align: center;
   background: linear-gradient(135deg, #fafafa 0%, #f0f0f0 100%);
-  border-radius: 0 0 12px 12px;
+  z-index: 10;
+  overflow-y: auto;
 }
 
 .map-error-icon {
@@ -1712,16 +1741,19 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   color: #d4380d;
 }
 
-/* ========== 地图加载中状态 ========== */
+/* ========== 地图加载中状态（覆盖层） ========== */
 .map-loading-state {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  min-height: 400px;
   background: linear-gradient(135deg, #fafafa 0%, #f0f0f0 100%);
-  border-radius: 0 0 12px 12px;
+  z-index: 5;
 }
 
 .map-loading-spinner {
