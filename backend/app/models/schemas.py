@@ -126,9 +126,12 @@ class WeatherInfo(BaseModel):
     @field_validator('day_temp', 'night_temp', mode='before')
     @classmethod
     def parse_temperature(cls, v):
-        """解析温度,移除degC等单位"""
+        """解析温度,移除特殊字符"""
         if isinstance(v, str):
-            v = v.replace('degC', '').replace('℃', '').replace('deg', '').strip()
+            # 移除可能的各种温度单位符号
+            for unit in ['°C', '℃', '°', 'degC', 'deg']:
+                v = v.replace(unit, '')
+            v = v.strip()
             try:
                 return int(v)
             except ValueError:

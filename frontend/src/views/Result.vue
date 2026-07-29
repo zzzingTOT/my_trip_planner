@@ -6,32 +6,44 @@
         ← 返回首页
       </a-button>
       <a-space size="middle">
-        <a-button v-if="!editMode" @click="toggleEditMode" type="default">
-          ✏️ 编辑行程
-        </a-button>
-        <a-button v-else @click="saveChanges" type="primary">
-          💾 保存修改
-        </a-button>
-        <a-button v-if="editMode" @click="cancelEdit" type="default">
-          ❌ 取消编辑
-        </a-button>
-
-        <!-- 导出按钮 -->
-        <a-dropdown v-if="!editMode">
-          <template #overlay>
-            <a-menu>
-              <a-menu-item key="image" @click="exportAsImage">
-                📷 导出为图片
-              </a-menu-item>
-              <a-menu-item key="pdf" @click="exportAsPDF">
-                📄 导出为PDF
-              </a-menu-item>
-            </a-menu>
-          </template>
-          <a-button type="default">
-            📥 导出行程 <DownOutlined />
+        <!-- 查看模式 -->
+        <template v-if="!editMode">
+          <a-button @click="enterEditMode" type="default">
+            ✏️ 编辑行程
           </a-button>
-        </a-dropdown>
+          <!-- 导出按钮 -->
+          <a-dropdown>
+            <template #overlay>
+              <a-menu>
+                <a-menu-item key="image" @click="exportAsImage">
+                  📷 导出为图片
+                </a-menu-item>
+                <a-menu-item key="pdf" @click="exportAsPDF">
+                  📄 导出为PDF
+                </a-menu-item>
+              </a-menu>
+            </template>
+            <a-button type="default">
+              📥 导出行程 <DownOutlined />
+            </a-button>
+          </a-dropdown>
+        </template>
+
+        <!-- 编辑模式工具栏 -->
+        <template v-else>
+          <a-button @click="undo" :disabled="!canUndo" title="撤销 (Ctrl+Z)">↩ 撤销</a-button>
+          <a-button @click="redo" :disabled="!canRedo" title="重做 (Ctrl+Y)">↪ 重做</a-button>
+          <a-divider type="vertical" />
+          <!-- 视图切换 -->
+          <a-radio-group v-model:value="viewMode" size="small" button-style="solid">
+            <a-radio-button value="list">📋 列表</a-radio-button>
+            <a-radio-button value="kanban">🗂️ 看板</a-radio-button>
+          </a-radio-group>
+          <a-divider type="vertical" />
+          <a-tag v-if="isDirty" color="orange">● 有未保存的修改</a-tag>
+          <a-button @click="saveChanges" type="primary">💾 保存修改</a-button>
+          <a-button @click="cancelEdit" type="default">❌ 取消编辑</a-button>
+        </template>
       </a-space>
     </div>
 
@@ -202,11 +214,44 @@
           </div>
         </div>
 
-        <!-- 每日行程:可折叠 -->
-        <a-card title="📅 每日行程" :bordered="false" class="days-card">
+        <!-- 每日行程 -->
+        <!-- ===== 看板视图 ===== -->
+        <div v-if="editMode && viewMode === 'kanban'" class="kanban-view">
+          <div class="kanban-toolbar">
+            <a-button size="small" type="dashed" @click="addDay(tripPlan!.days.length - 1)">
+              + 在末尾添加一天
+            </a-button>
+          </div>
+          <div class="kanban-columns">
+            <DayKanbanColumn
+              v-for="day in tripPlan!.days"
+              :key="day.day_index"
+              :day="day"
+              @add-attraction="(di: number) => addAttraction(di)"
+              @drag-start="(fromDay: number, fromIdx: number) => { moveDayFromDay = fromDay; moveDayFromIndex = fromIdx }"
+              @drop="(toDay: number, toIdx: number) => {
+                if (moveDayFromDay === toDay) {
+                  moveAttraction(toDay, moveDayFromIndex, toIdx)
+                } else {
+                  moveAttractionToDay(moveDayFromDay, moveDayFromIndex, toDay, toIdx)
+                }
+              }"
+              @drag-end="() => { moveDayFromDay = -1; moveDayFromIndex = -1 }"
+            />
+          </div>
+          <!-- 看板中点击景点打开编辑弹窗 -->
+        </div>
+
+        <!-- ===== 列表视图（查看+编辑） ===== -->
+        <a-card
+          v-if="viewMode === 'list'"
+          :title="'📅 每日行程' + (editMode ? ' (编辑模式)' : '')"
+          :bordered="false"
+          class="days-card"
+        >
           <a-collapse v-model:activeKey="activeDays" accordion>
             <a-collapse-panel
-              v-for="(day, index) in tripPlan.days"
+              v-for="(day, index) in tripPlan!.days"
               :key="index"
               :id="`day-${index}`"
             >
@@ -218,8 +263,19 @@
                 </div>
               </template>
 
-              <!-- 行程基本信息 -->
-              <div class="day-info">
+              <!-- 编辑模式：日级信息 -->
+              <DayEditorHeader
+                v-if="editMode"
+                :day="day"
+                :can-delete-day="tripPlan!.days.length > 1"
+                @update:field="(f: string, v: any) => updateDayInfo(day.day_index, f, v)"
+                @duplicate="duplicateDay(day.day_index)"
+                @add-day-after="addDay(day.day_index)"
+                @delete-day="deleteDay(day.day_index)"
+              />
+
+              <!-- 查看模式：日级信息 -->
+              <div v-else class="day-info">
                 <div class="info-row">
                   <span class="label">📝 行程描述:</span>
                   <span class="value">{{ day.description }}</span>
@@ -234,112 +290,147 @@
                 </div>
               </div>
 
-              <!-- 景点安排 -->
-              <a-divider orientation="left">🎯 景点安排</a-divider>
-              <a-list
-                :data-source="day.attractions"
-                :grid="{ gutter: 16, column: 2 }"
-              >
-                <template #renderItem="{ item, index }">
-                  <a-list-item>
-                    <a-card :title="item.name" size="small" class="attraction-card">
-                      <!-- 编辑模式下的操作按钮 -->
-                      <template #extra v-if="editMode">
-                        <a-space>
-                          <a-button
-                            size="small"
-                            @click="moveAttraction(day.day_index, index, 'up')"
-                            :disabled="index === 0"
-                          >
-                            ↑
-                          </a-button>
-                          <a-button
-                            size="small"
-                            @click="moveAttraction(day.day_index, index, 'down')"
-                            :disabled="index === day.attractions.length - 1"
-                          >
-                            ↓
-                          </a-button>
-                          <a-button
-                            size="small"
-                            danger
-                            @click="deleteAttraction(day.day_index, index)"
-                          >
-                            🗑️
-                          </a-button>
-                        </a-space>
-                      </template>
+              <!-- 景点安排 - 编辑模式 -->
+              <template v-if="editMode">
+                <a-divider orientation="left">
+                  🎯 景点安排
+                  <a-button size="small" type="dashed" @click="() => { pushSnapshot(); addAttraction(day.day_index) }" style="margin-left: 8px;">+ 添加景点</a-button>
+                </a-divider>
+                <div class="editable-attractions">
+                  <EditableAttractionCard
+                    v-for="(attr, attrIdx) in day.attractions"
+                    :key="attrIdx"
+                    :attr="attr"
+                    :can-move-up="attrIdx > 0"
+                    :can-move-down="attrIdx < day.attractions.length - 1"
+                    @update:field="(f: string, v: any) => updateAttr(day.day_index, attrIdx, f, v)"
+                    @move-up="moveAttraction(day.day_index, attrIdx, attrIdx - 1)"
+                    @move-down="moveAttraction(day.day_index, attrIdx, attrIdx + 1)"
+                    @move-to-day="() => { moveDayFromDay = day.day_index; moveDayFromIndex = attrIdx; moveDayModalVisible = true }"
+                    @delete="() => { pushSnapshot(); deleteAttr(day.day_index, attrIdx) }"
+                  />
+                </div>
+              </template>
 
-                      <!-- 景点图片 -->
-                      <div class="attraction-image-wrapper">
-                        <img
-                          :src="getAttractionImage(item.name, index)"
-                          :alt="item.name"
-                          class="attraction-image"
-                          @error="handleImageError"
-                        />
-                        <div class="attraction-badge">
-                          <span class="badge-number">{{ index + 1 }}</span>
+              <!-- 景点安排 - 查看模式 -->
+              <template v-else>
+                <a-divider orientation="left">🎯 景点安排</a-divider>
+                <a-list
+                  :data-source="day.attractions"
+                  :grid="{ gutter: 16, column: 2 }"
+                >
+                  <template #renderItem="{ item, index: attrIdx }">
+                    <a-list-item>
+                      <a-card :title="item.name" size="small" class="attraction-card">
+                        <div class="attraction-image-wrapper">
+                          <img
+                            :src="getAttractionImage(item.name, attrIdx)"
+                            :alt="item.name"
+                            class="attraction-image"
+                            @error="handleImageError"
+                          />
+                          <div class="attraction-badge">
+                            <span class="badge-number">{{ attrIdx + 1 }}</span>
+                          </div>
+                          <div v-if="item.ticket_price" class="price-tag">¥{{ item.ticket_price }}</div>
                         </div>
-                        <div v-if="item.ticket_price" class="price-tag">
-                          ¥{{ item.ticket_price }}
-                        </div>
-                      </div>
-
-                      <!-- 编辑模式下可编辑的字段 -->
-                      <div v-if="editMode">
-                        <p><strong>地址:</strong></p>
-                        <a-input v-model:value="item.address" size="small" style="margin-bottom: 8px" />
-
-                        <p><strong>游览时长(分钟):</strong></p>
-                        <a-input-number v-model:value="item.visit_duration" :min="10" :max="480" size="small" style="width: 100%; margin-bottom: 8px" />
-
-                        <p><strong>描述:</strong></p>
-                        <a-textarea v-model:value="item.description" :rows="2" size="small" style="margin-bottom: 8px" />
-                      </div>
-
-                      <!-- 查看模式 -->
-                      <div v-else>
                         <p><strong>地址:</strong> {{ item.address }}</p>
                         <p><strong>游览时长:</strong> {{ item.visit_duration }}分钟</p>
                         <p><strong>描述:</strong> {{ item.description }}</p>
                         <p v-if="item.rating"><strong>评分:</strong> {{ item.rating }}⭐</p>
-                      </div>
-                    </a-card>
-                  </a-list-item>
-                </template>
-              </a-list>
+                        <p v-if="item.notes" style="color: #fa8c16;">💡 {{ item.notes }}</p>
+                        <a-tag v-if="item.source_guide_index !== undefined" color="blue" size="small">
+                          来自攻略{{ item.source_guide_index + 1 }}
+                        </a-tag>
+                      </a-card>
+                    </a-list-item>
+                  </template>
+                </a-list>
+              </template>
 
-              <!-- 酒店推荐 -->
-              <a-divider v-if="day.hotel" orientation="left">🏨 住宿推荐</a-divider>
-              <a-card v-if="day.hotel" size="small" class="hotel-card">
-                <template #title>
-                  <span class="hotel-title">{{ day.hotel.name }}</span>
-                </template>
-                <a-descriptions :column="2" size="small">
-                  <a-descriptions-item label="地址">{{ day.hotel.address }}</a-descriptions-item>
-                  <a-descriptions-item label="类型">{{ day.hotel.type }}</a-descriptions-item>
-                  <a-descriptions-item label="价格范围">{{ day.hotel.price_range }}</a-descriptions-item>
-                  <a-descriptions-item label="评分">{{ day.hotel.rating }}⭐</a-descriptions-item>
-                  <a-descriptions-item label="距离" :span="2">{{ day.hotel.distance }}</a-descriptions-item>
+              <!-- 酒店 - 编辑模式 -->
+              <template v-if="editMode">
+                <a-divider orientation="left">🏨 住宿推荐</a-divider>
+                <EditableHotelCard
+                  v-if="day.hotel"
+                  :hotel="day.hotel"
+                  @update:field="(f: string, v: any) => updateHotel(day.day_index, f, v)"
+                  @replace="() => {}"
+                />
+                <a-button v-else size="small" type="dashed" @click="() => { pushSnapshot(); updateHotel(day.day_index, 'name', '') }">
+                  + 添加酒店
+                </a-button>
+
+                <!-- 餐饮 - 编辑模式 -->
+                <a-divider orientation="left">🍽️ 餐饮安排</a-divider>
+                <EditableMealList
+                  :meals="day.meals"
+                  @update-meal="(idx, f, v) => updateMeal(day.day_index, idx, f, v)"
+                  @delete-meal="(idx) => { pushSnapshot(); deleteMeal(day.day_index, idx) }"
+                  @add-meal="() => { pushSnapshot(); addMeal(day.day_index) }"
+                />
+              </template>
+
+              <!-- 酒店 - 查看模式 -->
+              <template v-else>
+                <a-divider v-if="day.hotel" orientation="left">🏨 住宿推荐</a-divider>
+                <a-card v-if="day.hotel" size="small" class="hotel-card">
+                  <template #title>
+                    <span class="hotel-title">{{ day.hotel.name }}</span>
+                  </template>
+                  <a-descriptions :column="2" size="small">
+                    <a-descriptions-item label="地址">{{ day.hotel.address }}</a-descriptions-item>
+                    <a-descriptions-item label="类型">{{ day.hotel.type }}</a-descriptions-item>
+                    <a-descriptions-item label="价格范围">{{ day.hotel.price_range }}</a-descriptions-item>
+                    <a-descriptions-item label="评分">{{ day.hotel.rating }}⭐</a-descriptions-item>
+                    <a-descriptions-item label="距离" :span="2">{{ day.hotel.distance }}</a-descriptions-item>
+                  </a-descriptions>
+                </a-card>
+
+                <a-divider orientation="left">🍽️ 餐饮安排</a-divider>
+                <a-descriptions :column="1" bordered size="small">
+                  <a-descriptions-item
+                    v-for="meal in day.meals"
+                    :key="meal.type"
+                    :label="getMealLabel(meal.type)"
+                  >
+                    {{ meal.name }}
+                    <span v-if="meal.description"> - {{ meal.description }}</span>
+                  </a-descriptions-item>
                 </a-descriptions>
-              </a-card>
-
-              <!-- 餐饮安排 -->
-              <a-divider orientation="left">🍽️ 餐饮安排</a-divider>
-              <a-descriptions :column="1" bordered size="small">
-                <a-descriptions-item
-                  v-for="meal in day.meals"
-                  :key="meal.type"
-                  :label="getMealLabel(meal.type)"
-                >
-                  {{ meal.name }}
-                  <span v-if="meal.description"> - {{ meal.description }}</span>
-                </a-descriptions-item>
-              </a-descriptions>
+              </template>
             </a-collapse-panel>
           </a-collapse>
         </a-card>
+
+        <!-- 跨天移动弹窗 -->
+        <a-modal
+          v-model:open="moveDayModalVisible"
+          title="将景点移动到哪一天？"
+          @ok="() => {
+            if (targetDay.value !== null && moveDayFromDay >= 0) {
+              moveAttractionToDay(moveDayFromDay, moveDayFromIndex, targetDay.value)
+              moveDayModalVisible = false
+            }
+          }"
+          ok-text="移动"
+          cancel-text="取消"
+        >
+          <a-select
+            v-model:value="targetDay"
+            style="width: 100%"
+            placeholder="选择目标天数"
+          >
+            <a-select-option
+              v-for="(d, i) in tripPlan!.days"
+              :key="i"
+              :value="d.day_index"
+              :disabled="d.day_index === moveDayFromDay"
+            >
+              第{{ d.day_index + 1 }}天{{ d.city ? ' - ' + d.city : '' }}
+            </a-select-option>
+          </a-select>
+        </a-modal>
 
         <a-card id="weather" v-if="tripPlan.weather_info && tripPlan.weather_info.length > 0" title="天气信息" style="margin-top: 20px" :bordered="false">
         <a-list
@@ -395,34 +486,69 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { DownOutlined } from '@ant-design/icons-vue'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import type { TripPlan } from '@/types'
+import { useTripEditor, createEmptyAttraction } from '@/composables/useTripEditor'
+import EditableAttractionCard from '@/components/EditableAttractionCard.vue'
+import EditableHotelCard from '@/components/EditableHotelCard.vue'
+import EditableMealList from '@/components/EditableMealList.vue'
+import DayEditorHeader from '@/components/DayEditorHeader.vue'
+import DayKanbanColumn from '@/components/DayKanbanColumn.vue'
 
 const router = useRouter()
 const tripPlan = ref<TripPlan | null>(null)
-const editMode = ref(false)
-const originalPlan = ref<TripPlan | null>(null)
 const attractionPhotos = ref<Record<string, string>>({})
 const activeSection = ref('overview')
 const activeDays = ref<number[]>([0]) // 默认展开第一天
 let map: any = null
-const mapLoadError = ref(false)        // 地图是否加载失败
-const mapErrorMessage = ref('')         // 地图加载失败的具体原因
-const mapRetrying = ref(false)          // 是否正在重试加载地图
-const mapLoading = ref(false)          // 地图是否正在加载中
+const mapLoadError = ref(false)
+const mapErrorMessage = ref('')
+const mapRetrying = ref(false)
+const mapLoading = ref(false)
+
+// 编辑器
+const editor = useTripEditor(tripPlan)
+const {
+  editMode, isDirty, viewMode, canUndo, canRedo, draftExists, draftDate,
+  undo, redo, pushSnapshot,
+  addDay, deleteDay, duplicateDay, updateDayInfo,
+  addAttraction, updateAttraction: updateAttr, deleteAttraction: deleteAttr,
+  moveAttraction, moveAttractionToDay,
+  updateHotel, replaceHotel,
+  updateMeal, deleteMeal, addMeal,
+  autoRecalculateBudget,
+  checkDraft, restoreDraft, clearDraft,
+  enterEditMode, saveChanges: editorSave, cancelEdit: editorCancel,
+} = editor
+
+// 跨天移动弹窗状态
+const moveDayModalVisible = ref(false)
+const moveDayFromDay = ref(-1)
+const moveDayFromIndex = ref(-1)
+const targetDay = ref<number | null>(null)
 
 onMounted(async () => {
   const data = sessionStorage.getItem('tripPlan')
   if (data) {
     tripPlan.value = JSON.parse(data)
-    // 图片加载和地图初始化并行执行，互不阻塞
-    // nextTick 确保 DOM 渲染完成后再初始化地图
+    // 检查草稿
+    const { exists, date } = checkDraft()
+    if (exists) {
+      Modal.confirm({
+        title: '检测到未完成的编辑',
+        content: `上一次编辑于 ${date ? new Date(date).toLocaleString() : '未知时间'}，是否恢复？`,
+        okText: '恢复编辑',
+        cancelText: '放弃草稿',
+        onOk: () => { restoreDraft() },
+        onCancel: () => { clearDraft() },
+      })
+    }
     await nextTick()
     await Promise.all([
       loadAttractionPhotos(),
@@ -431,81 +557,38 @@ onMounted(async () => {
   }
 })
 
-const goBack = () => {
-  router.push('/')
-}
-
-// 滚动到指定区域
-const scrollToSection = ({ key }: { key: string }) => {
-  activeSection.value = key
-  const element = document.getElementById(key)
-  if (element) {
-    element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-}
-
-// 切换编辑模式
-const toggleEditMode = () => {
-  editMode.value = true
-  // 保存原始数据用于取消编辑
-  originalPlan.value = JSON.parse(JSON.stringify(tripPlan.value))
-  message.info('进入编辑模式')
-}
-
-// 保存修改
+// 编辑保存后刷新地图
 const saveChanges = () => {
-  editMode.value = false
-  // 更新sessionStorage
-  if (tripPlan.value) {
-    sessionStorage.setItem('tripPlan', JSON.stringify(tripPlan.value))
-  }
-  message.success('修改已保存')
-
-  // 重新初始化地图以反映更改
-  if (map) {
+  const needMapRefresh = editorSave()
+  if (needMapRefresh && map) {
     map.destroy()
+    map = null
+    nextTick(() => initMap())
   }
-  nextTick(() => {
-    initMap()
-  })
 }
 
-// 取消编辑
 const cancelEdit = () => {
-  if (originalPlan.value) {
-    tripPlan.value = JSON.parse(JSON.stringify(originalPlan.value))
-  }
-  editMode.value = false
-  message.info('已取消编辑')
-}
-
-// 删除景点
-const deleteAttraction = (dayIndex: number, attrIndex: number) => {
-  if (!tripPlan.value) return
-
-  const day = tripPlan.value.days[dayIndex]
-  if (day.attractions.length <= 1) {
-    message.warning('每天至少需要保留一个景点')
-    return
-  }
-
-  day.attractions.splice(attrIndex, 1)
-  message.success('景点已删除')
-}
-
-// 移动景点顺序
-const moveAttraction = (dayIndex: number, attrIndex: number, direction: 'up' | 'down') => {
-  if (!tripPlan.value) return
-
-  const day = tripPlan.value.days[dayIndex]
-  const attractions = day.attractions
-
-  if (direction === 'up' && attrIndex > 0) {
-    [attractions[attrIndex], attractions[attrIndex - 1]] = [attractions[attrIndex - 1], attractions[attrIndex]]
-  } else if (direction === 'down' && attrIndex < attractions.length - 1) {
-    [attractions[attrIndex], attractions[attrIndex + 1]] = [attractions[attrIndex + 1], attractions[attrIndex]]
+  const needMapRefresh = editorCancel()
+  if (needMapRefresh && map) {
+    map.destroy()
+    map = null
+    nextTick(() => initMap())
   }
 }
+
+// watch 地图联动：编辑模式下景点变化实时更新标记
+watch(
+  () => tripPlan.value?.days?.flatMap(d => d.attractions.map(a => a.name + a.visit_duration)),
+  () => {
+    if (editMode.value && map && !mapLoading.value && !mapLoadError.value) {
+      // 简易刷新：销毁标记重绘
+      map.clearMap()
+      // 重新添加标记需要 AMap 实例，这里在编辑模式下仅在保存时刷新地图
+      // 实时联动控制在看板视图中处理
+    }
+  },
+  { deep: true }
+)
 
 const getMealLabel = (type: string): string => {
   const labels: Record<string, string> = {
@@ -1597,6 +1680,29 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* 看板视图 */
+.kanban-view {
+  margin-top: 20px;
+}
+
+.kanban-toolbar {
+  margin-bottom: 16px;
+}
+
+.kanban-columns {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 16px;
+}
+
+/* 可编辑景点列表 */
+.editable-attractions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 /* 响应式设计 */

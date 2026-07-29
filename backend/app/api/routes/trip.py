@@ -5,9 +5,9 @@ from fastapi import APIRouter, HTTPException
 from ...models.schemas import (
     TripRequest,
     TripPlanResponse,
-    GuideExtractionRequest,
     GuideExtractionResponse,
     GuideConfirmRequest,
+    GuideExtractionRequest,
     ErrorResponse
 )
 from ...agents.trip_planner_agent import get_trip_planner_agent, plan_trip_from_skeleton
