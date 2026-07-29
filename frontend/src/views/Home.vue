@@ -133,6 +133,39 @@
 
     <!-- ====== 高级选项（可折叠） ====== -->
     <div class="advanced-section">
+      <!-- 行程历史 -->
+      <div v-if="tripStore.historyCount > 0" class="history-section">
+        <div class="history-toggle" @click="showHistory = !showHistory">
+          <span>📋 我的行程 ({{ tripStore.historyCount }})</span>
+          <span class="toggle-arrow" :class="{ open: showHistory }">▼</span>
+        </div>
+        <div v-show="showHistory" class="history-list">
+          <div
+            v-for="item in tripStore.history"
+            :key="item.id"
+            class="history-item"
+          >
+            <div class="history-info">
+              <div class="history-title">{{ item.title }}</div>
+              <div class="history-meta">
+                {{ item.departure }} → {{ item.destinations.join(' → ') }}
+                · {{ item.startDate }} ~ {{ item.endDate }}
+                · {{ item.days }}天
+                <span v-if="item.totalBudget"> · ¥{{ item.totalBudget.toLocaleString() }}</span>
+              </div>
+              <div class="history-time">{{ formatHistoryTime(item.createdAt) }}</div>
+            </div>
+            <div class="history-actions">
+              <a-button size="small" @click="viewHistoryPlan(item.id)">查看</a-button>
+              <a-button size="small" @click="reuseHistoryPlan(item.id)">复用</a-button>
+              <a-popconfirm title="确定删除此记录？" @confirm="tripStore.removeFromHistory(item.id)" ok-text="删除" cancel-text="取消">
+                <a-button size="small" danger>删除</a-button>
+              </a-popconfirm>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="advanced-toggle" @click="showAdvanced = !showAdvanced">
         <span>⚙️ 偏好与高级设置</span>
         <span class="toggle-arrow" :class="{ open: showAdvanced }">▼</span>
@@ -289,10 +322,12 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { generateTripPlan, extractGuide, planFromSkeleton } from '@/services/api'
 import { searchCities } from '@/data/cities'
+import { useTripStore } from '@/stores/trip'
 import type { TripFormData, GuideExtractionResult } from '@/types'
 import type { Dayjs } from 'dayjs'
 
 const router = useRouter()
+const tripStore = useTripStore()
 const loading = ref(false)
 const loadingProgress = ref(0)
 const loadingStatus = ref('')
@@ -300,6 +335,7 @@ const loadingStatus = ref('')
 // 高级选项展开/折叠
 const showAdvanced = ref(false)
 const showGuideSection = ref(false)
+const showHistory = ref(false)
 
 // 攻略相关状态
 const guideTexts = ref<string[]>([''])
@@ -504,6 +540,7 @@ const handleConfirmSkeleton = async () => {
 
     if (response.success && response.data) {
       sessionStorage.setItem('tripPlan', JSON.stringify(response.data))
+      tripStore.addToHistory(response.data)
       message.success('行程生成成功！已融合攻略建议')
       setTimeout(() => {
         router.push('/result')
@@ -625,11 +662,44 @@ const handleSubmit = async () => {
     }, 1000)
   }
 }
+
+function formatHistoryTime(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  const diff = now.getTime() - d.getTime()
+  if (diff < 3600000) return '刚刚'
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}天前`
+  return d.toLocaleDateString('zh-CN')
+}
+
+function viewHistoryPlan(id: string) {
+  const plan = tripStore.getHistoryPlan(id)
+  if (plan) {
+    tripStore.setCurrentPlan(plan)
+    router.push('/result')
+  }
+}
+
+function reuseHistoryPlan(id: string) {
+  const formData_ = tripStore.getReuseFormData(id)
+  if (formData_) {
+    // 回填表单
+    formData.departure_city = formData_.departure_city
+    formData.cities = formData_.cities
+    formData.transportation = formData_.transportation
+    formData.accommodation = formData_.accommodation
+    // 滚动到顶部
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    message.success('已加载历史行程参数，可修改后重新规划')
+  }
+}
+
 </script>
 
-/* ============ 新架构首页样式 ============ */
-
 <style scoped>
+
+/* ============ 新架构首页样式 ============ */
 .home-container {
   min-height: 100vh;
   background: linear-gradient(180deg, #eef0f8 0%, var(--color-bg-page) 100%);
