@@ -629,6 +629,21 @@ const handleSubmit = async () => {
     return
   }
 
+  // P013-1 修复: 如果有已提取但未确认的骨架，自动走骨架驱动流程
+  if (showSkeletonPreview.value && skeletonData.value) {
+    // 检查用户是否至少勾选了一个景点
+    const hasChecked = skeletonData.value.days.some(d =>
+      d.attractions.some(a => a.selected)
+    )
+    if (hasChecked) {
+      // 有骨架→走骨架驱动流程
+      await handleConfirmSkeleton()
+      return
+    }
+    // 骨架为空（用户取消全部勾选）→退化为标准流程
+    message.info('未选择任何攻略景点，使用标准规划流程')
+  }
+
   loading.value = true
   loadingProgress.value = 0
   loadingStatus.value = '正在初始化...'

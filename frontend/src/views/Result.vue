@@ -35,7 +35,7 @@
           <a-button @click="redo" :disabled="!canRedo" title="重做 (Ctrl+Y)">↪ 重做</a-button>
           <a-divider type="vertical" />
           <!-- 视图切换 -->
-          <a-radio-group v-model:value="viewMode" size="small" button-style="solid">
+          <a-radio-group v-model:value="viewMode" size="small" button-style="solid" @change="onViewModeChange">
             <a-radio-button value="list">📋 列表</a-radio-button>
             <a-radio-button value="kanban">🗂️ 看板</a-radio-button>
           </a-radio-group>
@@ -574,6 +574,11 @@ const cancelEdit = () => {
     map = null
     nextTick(() => initMap())
   }
+}
+
+// P013-2 修复：视图切换前保存快照，防止未保存的新增数据丢失
+function onViewModeChange() {
+  pushSnapshot()
 }
 
 // watch 地图联动：编辑模式下景点变化实时更新标记
