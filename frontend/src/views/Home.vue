@@ -7,395 +7,279 @@
       <div class="circle circle-3"></div>
     </div>
 
-    <!-- 页面标题 -->
+    <!-- 页面标题 — 紧凑品牌区 -->
     <div class="page-header">
-      <div class="icon-wrapper">
-        <span class="icon">✈️</span>
+      <div class="brand-row">
+        <span class="brand-icon">✈️</span>
+        <h1 class="page-title">Trip Planner</h1>
       </div>
-      <h1 class="page-title">智能旅行助手</h1>
-      <p class="page-subtitle">基于AI的个性化旅行规划,让每一次出行都完美无忧</p>
+      <p class="page-subtitle">AI驱动的智能旅行助手 · 输入目的地，即刻生成专属行程</p>
     </div>
 
-    <a-card class="form-card" :bordered="false">
+    <!-- ====== 核心信息卡片（必填项） ====== -->
+    <div class="core-card">
       <a-form
         :model="formData"
         layout="vertical"
         @finish="handleSubmit"
       >
-        <!-- 第一步:出发地与目的地 -->
-        <div class="form-section">
-          <div class="section-header">
-            <span class="section-icon">📍</span>
-            <span class="section-title">出发地与目的地</span>
-          </div>
+        <a-row :gutter="20" align="bottom">
+          <!-- 出发城市 -->
+          <a-col :xs="24" :sm="6">
+            <a-form-item name="departure_city" :rules="[{ required: true, message: '请输入出发城市' }]" style="margin-bottom: 0;">
+              <template #label>
+                <span class="form-label">出发城市</span>
+              </template>
+              <a-auto-complete
+                v-model:value="formData.departure_city"
+                :options="departureCityOptions"
+                placeholder="上海"
+                size="large"
+                class="core-input"
+                @search="handleDepartureCitySearch"
+                :filter-option="false"
+              />
+            </a-form-item>
+          </a-col>
 
-          <a-row :gutter="24">
-            <!-- 出发城市 - 带自动补全 -->
-            <a-col :span="6">
-              <a-form-item name="departure_city" :rules="[{ required: true, message: '请输入出发城市' }]">
-                <template #label>
-                  <span class="form-label">出发城市</span>
-                </template>
-                <a-auto-complete
-                  v-model:value="formData.departure_city"
-                  :options="departureCityOptions"
-                  placeholder="例如: 上海"
-                  size="large"
-                  class="custom-input"
-                  @search="handleDepartureCitySearch"
-                  :filter-option="false"
-                >
-                  <template #prefix>
-                    <span style="color: #ff6b6b;">🏠</span>
-                  </template>
-                  <template #option="{ value }">
-                    <div class="city-option">
-                      <span>{{ value }}</span>
-                    </div>
-                  </template>
-                </a-auto-complete>
-              </a-form-item>
-            </a-col>
+          <!-- 目的地城市 -->
+          <a-col :xs="24" :sm="8">
+            <a-form-item name="cities" :rules="[{ required: true, message: '请至少添加一个目的地', type: 'array', min: 1 }]" style="margin-bottom: 0;">
+              <template #label>
+                <span class="form-label">目的地</span>
+              </template>
+              <a-select
+                v-model:value="formData.cities"
+                mode="tags"
+                size="large"
+                class="core-select"
+                placeholder="输入城市名后按回车"
+                :max-tag-count="4"
+                :filter-option="false"
+                :options="destinationCityOptions"
+                @search="handleDestinationCitySearch"
+                @change="handleCitiesChange"
+              />
+            </a-form-item>
+          </a-col>
 
-            <!-- 目的地城市 - 多选标签模式 + 自动补全 -->
-            <a-col :span="8">
-              <a-form-item name="cities" :rules="[{ required: true, message: '请至少添加一个目的地城市', type: 'array', min: 1 }]">
-                <template #label>
-                  <span class="form-label">目的地城市（可多选）</span>
-                </template>
-                <a-select
-                  v-model:value="formData.cities"
-                  mode="tags"
-                  size="large"
-                  class="custom-select"
-                  placeholder="输入城市名后按回车添加"
-                  :max-tag-count="5"
-                  :filter-option="false"
-                  :options="destinationCityOptions"
-                  @search="handleDestinationCitySearch"
-                  @change="handleCitiesChange"
-                >
-                </a-select>
-                <div v-if="formData.cities.length > 0" class="cities-hint">
-                  📍 {{ formData.cities.join(' → ') }}
-                </div>
-              </a-form-item>
-            </a-col>
+          <!-- 开始日期 -->
+          <a-col :xs="12" :sm="4">
+            <a-form-item name="start_date" :rules="[{ required: true, message: '请选择' }]" style="margin-bottom: 0;">
+              <template #label>
+                <span class="form-label">出发</span>
+              </template>
+              <a-date-picker
+                v-model:value="formData.start_date"
+                size="large"
+                class="core-date"
+                placeholder="选择日期"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
 
-            <a-col :span="5">
-              <a-form-item name="start_date" :rules="[{ required: true, message: '请选择开始日期' }]">
-                <template #label>
-                  <span class="form-label">开始日期</span>
-                </template>
-                <a-date-picker
-                  v-model:value="formData.start_date"
-                  style="width: 100%"
-                  size="large"
-                  class="custom-input"
-                  placeholder="选择日期"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="5">
-              <a-form-item name="end_date" :rules="[{ required: true, message: '请选择结束日期' }]">
-                <template #label>
-                  <span class="form-label">结束日期</span>
-                </template>
-                <a-date-picker
-                  v-model:value="formData.end_date"
-                  style="width: 100%"
-                  size="large"
-                  class="custom-input"
-                  placeholder="选择日期"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
+          <!-- 结束日期 -->
+          <a-col :xs="12" :sm="4">
+            <a-form-item name="end_date" :rules="[{ required: true, message: '请选择' }]" style="margin-bottom: 0;">
+              <template #label>
+                <span class="form-label">返回</span>
+              </template>
+              <a-date-picker
+                v-model:value="formData.end_date"
+                size="large"
+                class="core-date"
+                placeholder="选择日期"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
 
-          <!-- 旅行天数显示 -->
-          <a-row>
-            <a-col :span="4">
-              <div class="days-display">
-                <span class="days-label">旅行天数</span>
-                <span class="days-value">{{ formData.travel_days }}</span>
+          <!-- 天数 + 提交按钮 -->
+          <a-col :xs="24" :sm="2">
+            <div class="core-submit-wrap">
+              <div class="days-badge" v-if="formData.travel_days > 0">
+                <span class="days-num">{{ formData.travel_days }}</span>
                 <span class="days-unit">天</span>
               </div>
-            </a-col>
-          </a-row>
-        </div>
-
-        <!-- 第二步:偏好设置 -->
-        <div class="form-section">
-          <div class="section-header">
-            <span class="section-icon">⚙️</span>
-            <span class="section-title">偏好设置</span>
-          </div>
-
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item name="transportation">
-                <template #label>
-                  <span class="form-label">市内交通方式</span>
-                </template>
-                <a-select v-model:value="formData.transportation" size="large" class="custom-select">
-                  <a-select-option value="公共交通">🚇 公共交通</a-select-option>
-                  <a-select-option value="自驾">🚗 自驾</a-select-option>
-                  <a-select-option value="步行">🚶 步行</a-select-option>
-                  <a-select-option value="混合">🔀 混合</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item name="accommodation">
-                <template #label>
-                  <span class="form-label">住宿偏好</span>
-                </template>
-                <a-select v-model:value="formData.accommodation" size="large" class="custom-select">
-                  <a-select-option value="经济型酒店">💰 经济型酒店</a-select-option>
-                  <a-select-option value="舒适型酒店">🏨 舒适型酒店</a-select-option>
-                  <a-select-option value="豪华酒店">⭐ 豪华酒店</a-select-option>
-                  <a-select-option value="民宿">🏡 民宿</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item name="preferences">
-                <template #label>
-                  <span class="form-label">旅行偏好</span>
-                </template>
-                <div class="preference-tags">
-                  <a-checkbox-group v-model:value="formData.preferences" class="custom-checkbox-group">
-                    <a-checkbox value="历史文化" class="preference-tag">🏛️ 历史文化</a-checkbox>
-                    <a-checkbox value="自然风光" class="preference-tag">🏞️ 自然风光</a-checkbox>
-                    <a-checkbox value="美食" class="preference-tag">🍜 美食</a-checkbox>
-                    <a-checkbox value="购物" class="preference-tag">🛍️ 购物</a-checkbox>
-                    <a-checkbox value="艺术" class="preference-tag">🎨 艺术</a-checkbox>
-                    <a-checkbox value="休闲" class="preference-tag">☕ 休闲</a-checkbox>
-                  </a-checkbox-group>
-                </div>
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
-
-        <!-- 第三步:额外要求 -->
-        <div class="form-section">
-          <div class="section-header">
-            <span class="section-icon">💬</span>
-            <span class="section-title">额外要求</span>
-          </div>
-
-          <a-form-item name="free_text_input">
-            <a-textarea
-              v-model:value="formData.free_text_input"
-              placeholder="请输入您的额外要求,例如:想去看升旗、需要无障碍设施、对海鲜过敏等..."
-              :rows="3"
-              size="large"
-              class="custom-textarea"
-            />
-          </a-form-item>
-        </div>
-
-        <!-- 第四步:参考攻略（可选） -->
-        <div class="form-section">
-          <div class="section-header">
-            <span class="section-icon">📋</span>
-            <span class="section-title">参考攻略（可选）</span>
-            <a-tag color="purple" style="margin-left: 8px;">新功能</a-tag>
-          </div>
-          <p class="section-desc">
-            粘贴小红书/马蜂窝等平台上的旅行攻略文本，AI 将自动提取景点、时长、避坑提示等信息。
-            支持同时粘贴多篇攻略，系统会自动融合去重。
-          </p>
-
-          <!-- 攻略输入区（未提取时显示） -->
-          <div v-if="!showSkeletonPreview">
-            <div class="guide-inputs">
-              <div
-                v-for="(guide, index) in guideTexts"
-                :key="index"
-                class="guide-input-row"
-              >
-                <div class="guide-input-header">
-                  <span class="guide-input-label">📄 攻略 #{{ index + 1 }}</span>
-                  <a-button
-                    v-if="guideTexts.length > 1"
-                    size="small"
-                    danger
-                    type="text"
-                    @click="removeGuide(index)"
-                  >
-                    移除
-                  </a-button>
-                </div>
-                <a-textarea
-                  v-model:value="guideTexts[index]"
-                  :placeholder="index === 0 ? '在此粘贴攻略文本，例如：\nDay1：天安门→故宫→景山公园，晚上住鼓楼附近\nDay2：颐和园半天→圆明园→晚上去三里屯吃饭' : '粘贴第二篇攻略...'"
-                  :rows="4"
-                  size="large"
-                  class="custom-textarea guide-textarea"
-                />
-              </div>
-              <a-button type="dashed" block @click="addGuide" style="margin-top: 8px;">
-                + 添加另一篇攻略
-              </a-button>
-            </div>
-
-            <a-button
-              type="primary"
-              :loading="extracting"
-              :disabled="!hasGuideContent"
-              @click="handleExtractGuide"
-              size="large"
-              style="margin-top: 16px; width: 100%;"
-              class="extract-button"
-            >
-              <template v-if="!extracting">
-                🔍 提取攻略信息
-              </template>
-              <template v-else>
-                正在提取攻略骨架...
-              </template>
-            </a-button>
-
-            <div v-if="extractError" class="extract-error">
-              ⚠️ {{ extractError }}
-            </div>
-          </div>
-
-          <!-- 骨架预览区（提取完成后显示） -->
-          <div v-if="showSkeletonPreview && skeletonData" class="skeleton-preview">
-            <a-divider>📋 攻略提取结果预览</a-divider>
-
-            <div class="skeleton-header">
-              <a-space>
-                <a-tag color="blue">识别 {{ skeletonData.total_days }} 天行程</a-tag>
-                <a-tag v-if="skeletonData.source_count > 1" color="green">
-                  融合 {{ skeletonData.source_count }} 篇攻略
-                </a-tag>
-                <a-tag v-for="tag in skeletonData.overall_tags" :key="tag" color="purple">
-                  {{ tag }}
-                </a-tag>
-              </a-space>
-              <a-button size="small" type="text" @click="resetGuideExtraction">
-                重新提取
-              </a-button>
-            </div>
-
-            <div
-              v-if="skeletonData.overall_notes"
-              class="skeleton-notes"
-            >
-              💡 {{ skeletonData.overall_notes }}
-            </div>
-
-            <!-- 每日景点列表（可勾选/删除） -->
-            <div
-              v-for="day in skeletonData.days"
-              :key="day.day_index"
-              class="skeleton-day"
-            >
-              <div class="skeleton-day-header">
-                <strong>📅 第{{ day.day_index + 1 }}天</strong>
-                <span class="skeleton-day-city" v-if="day.city">{{ day.city }}</span>
-                <span class="skeleton-day-desc">{{ day.description }}</span>
-              </div>
-              <div class="skeleton-attractions">
-                <div
-                  v-for="(attr, attrIdx) in day.attractions"
-                  :key="attrIdx"
-                  class="skeleton-attr-row"
-                  :class="{ 'attr-deselected': !attr.selected }"
-                >
-                  <a-checkbox
-                    v-model:checked="attr.selected"
-                    class="skeleton-checkbox"
-                  />
-                  <div class="skeleton-attr-info">
-                    <span class="skeleton-attr-name">
-                      {{ attr.name }}
-                      <a-tag v-if="attr.source_guide_index !== undefined" size="small" color="blue" style="margin-left: 4px;">
-                        攻略{{ attr.source_guide_index + 1 }}
-                      </a-tag>
-                    </span>
-                    <span class="skeleton-attr-meta">
-                      {{ attr.visit_duration }}分钟
-                      <template v-if="attr.recommended_time"> · {{ attr.recommended_time }}</template>
-                      <template v-if="attr.category"> · {{ attr.category }}</template>
-                    </span>
-                    <span v-if="attr.notes" class="skeleton-attr-notes">💡 {{ attr.notes }}</span>
-                  </div>
-                  <a-button
-                    size="small"
-                    type="text"
-                    danger
-                    @click="removeSkeletonAttr(day.day_index, attrIdx)"
-                    class="skeleton-remove-btn"
-                  >
-                    ✕
-                  </a-button>
-                </div>
-              </div>
-              <!-- 餐饮建议 -->
-              <div v-if="day.meal_suggestions.length > 0" class="skeleton-meals">
-                🍽️ {{ day.meal_suggestions.join(' · ') }}
-              </div>
-            </div>
-
-            <div class="skeleton-actions">
-              <a-button @click="resetGuideExtraction" size="large">
-                重新提取
-              </a-button>
               <a-button
                 type="primary"
+                html-type="submit"
+                :loading="loading"
                 size="large"
-                @click="handleConfirmSkeleton"
+                block
+                class="core-submit-btn"
+                :disabled="!canSubmit"
               >
-                ✅ 确认骨架，生成完整行程
+                <template v-if="!loading">🚀 开始规划</template>
+                <template v-else>规划中...</template>
               </a-button>
+            </div>
+          </a-col>
+        </a-row>
+      </a-form>
+    </div>
+
+    <!-- 加载进度 -->
+    <div v-if="loading" class="progress-bar">
+      <a-progress
+        :percent="loadingProgress"
+        status="active"
+        :stroke-color="{ from: '#5b4cc4', to: '#7b6fd4' }"
+        :stroke-width="8"
+      />
+      <p class="progress-text">{{ loadingStatus }}</p>
+    </div>
+
+    <!-- ====== 高级选项（可折叠） ====== -->
+    <div class="advanced-section">
+      <div class="advanced-toggle" @click="showAdvanced = !showAdvanced">
+        <span>⚙️ 偏好与高级设置</span>
+        <span class="toggle-arrow" :class="{ open: showAdvanced }">▼</span>
+      </div>
+
+      <div v-show="showAdvanced" class="advanced-panel">
+        <!-- 偏好设置 -->
+        <div class="advanced-card">
+          <div class="card-label">旅行偏好</div>
+          <div class="preference-chips">
+            <div
+              v-for="pref in availablePreferences"
+              :key="pref.key"
+              class="pref-chip"
+              :class="{ active: formData.preferences.includes(pref.key) }"
+              @click="togglePreference(pref.key)"
+            >
+              {{ pref.icon }} {{ pref.label }}
             </div>
           </div>
         </div>
 
-        <!-- 提交按钮（没有攻略时显示） -->
-        <a-form-item v-if="!showSkeletonPreview">
-          <a-button
-            type="primary"
-            html-type="submit"
-            :loading="loading"
-            size="large"
-            block
-            class="submit-button"
-          >
-            <template v-if="!loading">
-              <span class="button-icon">🚀</span>
-              <span>开始规划我的旅行</span>
-            </template>
-            <template v-else>
-              <span>正在生成中...</span>
-            </template>
-          </a-button>
-        </a-form-item>
+        <!-- 交通 + 住宿 -->
+        <a-row :gutter="16" style="margin-top: 12px;">
+          <a-col :span="12">
+            <div class="advanced-card">
+              <div class="card-label">市内交通</div>
+              <a-select v-model:value="formData.transportation" size="middle" class="core-select" style="width: 100%;">
+                <a-select-option value="公共交通">🚇 公共交通</a-select-option>
+                <a-select-option value="自驾">🚗 自驾</a-select-option>
+                <a-select-option value="步行">🚶 步行</a-select-option>
+                <a-select-option value="混合">🔀 混合</a-select-option>
+              </a-select>
+            </div>
+          </a-col>
+          <a-col :span="12">
+            <div class="advanced-card">
+              <div class="card-label">住宿偏好</div>
+              <a-select v-model:value="formData.accommodation" size="middle" class="core-select" style="width: 100%;">
+                <a-select-option value="经济型酒店">💰 经济型</a-select-option>
+                <a-select-option value="舒适型酒店">🏨 舒适型</a-select-option>
+                <a-select-option value="豪华酒店">⭐ 豪华型</a-select-option>
+                <a-select-option value="民宿">🏡 民宿</a-select-option>
+              </a-select>
+            </div>
+          </a-col>
+        </a-row>
 
-        <!-- 骨架确认后生成中的状态 -->
-        <a-form-item v-if="showSkeletonPreview && generating">
-          <div class="loading-container">
-            <a-progress
-              :percent="loadingProgress"
-              status="active"
-              :stroke-color="{
-                '0%': '#667eea',
-                '100%': '#764ba2',
-              }"
-              :stroke-width="10"
-            />
-            <p class="loading-status">
-              {{ loadingStatus }}
-            </p>
+        <!-- 额外要求 -->
+        <div class="advanced-card" style="margin-top: 12px;">
+          <div class="card-label">额外要求</div>
+          <a-textarea
+            v-model:value="formData.free_text_input"
+            placeholder="例如：想看升旗、对海鲜过敏、需要无障碍设施..."
+            :rows="2"
+            size="middle"
+            class="custom-textarea"
+          />
+        </div>
+
+        <!-- ====== 参考攻略（可折叠子区域） ====== -->
+        <div class="advanced-card guide-card" style="margin-top: 12px;">
+          <div class="guide-header" @click="showGuideSection = !showGuideSection">
+            <div class="card-label" style="margin-bottom: 0;">📋 参考攻略（可选）</div>
+            <a-tag color="purple" size="small">Beta</a-tag>
+            <span class="toggle-arrow" :class="{ open: showGuideSection }" style="font-size: 12px;">▼</span>
           </div>
-        </a-form-item>
-      </a-form>
-    </a-card>
+          <p class="guide-desc" v-show="showGuideSection">粘贴小红书/马蜂窝等攻略文本，AI 自动提取景点与行程建议</p>
+
+          <div v-show="showGuideSection">
+            <div v-if="!showSkeletonPreview">
+              <div class="guide-inputs">
+                <div v-for="(guide, index) in guideTexts" :key="index" class="guide-input-row">
+                  <div class="guide-input-header">
+                    <span class="guide-input-label">攻略 #{{ index + 1 }}</span>
+                    <a-button v-if="guideTexts.length > 1" size="small" danger type="text" @click="removeGuide(index)">移除</a-button>
+                  </div>
+                  <a-textarea
+                    v-model:value="guideTexts[index]"
+                    :placeholder="index === 0 ? '粘贴攻略文本，如：Day1 天安门→故宫→景山，住鼓楼附近' : '粘贴第二篇攻略...'"
+                    :rows="3"
+                    size="small"
+                    class="guide-textarea"
+                  />
+                </div>
+                <a-button size="small" type="dashed" block @click="addGuide" style="margin-top: 6px;">+ 添加另一篇攻略</a-button>
+              </div>
+              <div style="display: flex; gap: 8px; margin-top: 10px;">
+                <a-button
+                  size="small"
+                  :loading="extracting"
+                  :disabled="!hasGuideContent"
+                  @click="handleExtractGuide"
+                >
+                  🔍 提取攻略信息
+                </a-button>
+                <span v-if="extractError" class="extract-error-inline">⚠️ {{ extractError }}</span>
+              </div>
+            </div>
+
+            <!-- 骨架预览 -->
+            <div v-if="showSkeletonPreview && skeletonData" class="skeleton-preview">
+              <div class="skeleton-header">
+                <a-space size="small" wrap>
+                  <a-tag color="blue">{{ skeletonData.total_days }}天</a-tag>
+                  <a-tag v-if="skeletonData.source_count > 1" color="green">{{ skeletonData.source_count }}篇融合</a-tag>
+                  <a-tag v-for="tag in skeletonData.overall_tags" :key="tag" color="purple" size="small">{{ tag }}</a-tag>
+                </a-space>
+                <a-button size="small" type="text" @click="resetGuideExtraction">重新提取</a-button>
+              </div>
+              <div v-if="skeletonData.overall_notes" class="skeleton-notes">💡 {{ skeletonData.overall_notes }}</div>
+              <div v-for="day in skeletonData.days" :key="day.day_index" class="skeleton-day">
+                <div class="skeleton-day-header">
+                  <strong>Day {{ day.day_index + 1 }}</strong>
+                  <span class="skeleton-day-city" v-if="day.city">{{ day.city }}</span>
+                </div>
+                <div class="skeleton-attractions">
+                  <div v-for="(attr, attrIdx) in day.attractions" :key="attrIdx" class="skeleton-attr-row" :class="{ 'attr-deselected': !attr.selected }">
+                    <a-checkbox v-model:checked="attr.selected" />
+                    <div class="skeleton-attr-info">
+                      <span class="skeleton-attr-name">
+                        {{ attr.name }}
+                        <a-tag v-if="attr.source_guide_index !== undefined" color="blue" size="small">攻略{{ attr.source_guide_index + 1 }}</a-tag>
+                      </span>
+                      <span class="skeleton-attr-meta">{{ attr.visit_duration }}min<template v-if="attr.recommended_time"> · {{ attr.recommended_time }}</template></span>
+                      <span v-if="attr.notes" class="skeleton-attr-notes">💡 {{ attr.notes }}</span>
+                    </div>
+                    <a-button size="small" type="text" danger @click="removeSkeletonAttr(day.day_index, attrIdx)">✕</a-button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 骨架生成中的状态 -->
+    <div v-if="showSkeletonPreview && generating" class="progress-bar" style="margin-top: 16px;">
+      <a-progress
+        :percent="loadingProgress"
+        status="active"
+        :stroke-color="{ from: '#5b4cc4', to: '#7b6fd4' }"
+        :stroke-width="8"
+      />
+      <p class="progress-text">{{ loadingStatus }}</p>
+    </div>
   </div>
 </template>
 
@@ -413,6 +297,10 @@ const loading = ref(false)
 const loadingProgress = ref(0)
 const loadingStatus = ref('')
 
+// 高级选项展开/折叠
+const showAdvanced = ref(false)
+const showGuideSection = ref(false)
+
 // 攻略相关状态
 const guideTexts = ref<string[]>([''])
 const extracting = ref(false)
@@ -425,6 +313,34 @@ const skeletonData = ref<GuideExtractionResult | null>(null)
 const departureCityOptions = ref<{ value: string; label: string }[]>([])
 // 目的地城市自动补全选项
 const destinationCityOptions = ref<{ value: string; label: string }[]>([])
+
+// 是否可以提交（必填项校验 + 主按钮disabled）
+const canSubmit = computed(() => {
+  return formData.departure_city.trim().length > 0
+    && formData.cities.length > 0
+    && formData.start_date !== null
+    && formData.end_date !== null
+    && !loading.value
+})
+
+// 快捷偏好标签
+const availablePreferences = [
+  { key: '历史文化', icon: '🏛️', label: '历史文化' },
+  { key: '自然风光', icon: '🏞️', label: '自然风光' },
+  { key: '美食', icon: '🍜', label: '美食' },
+  { key: '购物', icon: '🛍️', label: '购物' },
+  { key: '艺术', icon: '🎨', label: '艺术' },
+  { key: '休闲', icon: '☕', label: '休闲' },
+]
+
+function togglePreference(key: string) {
+  const idx = formData.preferences.indexOf(key)
+  if (idx >= 0) {
+    formData.preferences.splice(idx, 1)
+  } else {
+    formData.preferences.push(key)
+  }
+}
 
 const formData = reactive<TripFormData & { start_date: Dayjs | null; end_date: Dayjs | null }>({
   departure_city: '',       // 出发城市，必填
@@ -711,55 +627,322 @@ const handleSubmit = async () => {
 }
 </script>
 
+/* ============ 新架构首页样式 ============ */
+
 <style scoped>
 .home-container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 60px 20px;
+  background: linear-gradient(180deg, #eef0f8 0%, var(--color-bg-page) 100%);
+  padding: 40px 20px 60px;
   position: relative;
   overflow: hidden;
 }
 
 /* 背景装饰 */
-.bg-decoration {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  overflow: hidden;
+.bg-decoration { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; opacity: 0.5; }
+.circle { position: absolute; border-radius: 50%; background: rgba(91, 76, 196, 0.04); animation: float 25s infinite ease-in-out; }
+.circle-1 { width: 400px; height: 400px; top: -150px; right: -150px; }
+.circle-2 { width: 200px; height: 200px; bottom: 10%; left: -80px; animation-delay: 8s; }
+.circle-3 { width: 120px; height: 120px; top: 40%; right: 15%; animation-delay: 16s; }
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-16px); }
 }
 
-.circle {
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  animation: float 20s infinite ease-in-out;
+/* 页面标题 — 紧凑品牌区 */
+.page-header { text-align: center; margin-bottom: var(--space-xl); position: relative; z-index: 1; animation: fadeInDown 0.5s ease-out; }
+.brand-row { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.brand-icon { font-size: 28px; }
+.page-title { font-size: var(--font-heading-lg); font-weight: 700; color: var(--color-text-primary); letter-spacing: -0.5px; }
+.page-subtitle { font-size: var(--font-body); color: var(--color-text-tertiary); margin: 6px 0 0; font-weight: 400; }
+
+/* 核心信息卡片 */
+.core-card {
+  max-width: 860px;
+  margin: 0 auto;
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  padding: 28px 32px 20px;
+  position: relative;
+  z-index: 1;
+  animation: fadeInUp 0.5s ease-out;
 }
 
-.circle-1 {
-  width: 300px;
-  height: 300px;
-  top: -100px;
-  left: -100px;
-  animation-delay: 0s;
+.form-label {
+  font-size: var(--font-caption);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.circle-2 {
-  width: 200px;
-  height: 200px;
-  top: 50%;
-  right: -50px;
-  animation-delay: 5s;
+.core-input :deep(.ant-input),
+.core-date :deep(.ant-input) {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
 }
 
-.circle-3 {
-  width: 150px;
-  height: 150px;
-  bottom: -50px;
-  left: 30%;
-  animation-delay: 10s;
+.core-select :deep(.ant-select-selector) {
+  border-radius: var(--radius-sm) !important;
+  border: 1px solid var(--color-border) !important;
+}
+
+.core-submit-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.days-badge {
+  padding: 2px 12px;
+  background: var(--color-brand-gradient);
+  color: white;
+  border-radius: var(--radius-full);
+  font-weight: 700;
+  font-size: var(--font-body);
+}
+
+.core-submit-btn {
+  height: 44px;
+  border-radius: var(--radius-md);
+}
+.core-submit-btn:disabled {
+  opacity: 0.5;
+}
+
+/* 加载进度条 */
+.progress-bar {
+  max-width: 860px;
+  margin: var(--space-md) auto 0;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.progress-text {
+  margin-top: var(--space-sm);
+  color: var(--color-brand);
+  font-size: var(--font-small);
+}
+
+/* 高级选项 */
+.advanced-section {
+  max-width: 860px;
+  margin: var(--space-md) auto 0;
+  position: relative;
+  z-index: 1;
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  font-size: var(--font-small);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  transition: box-shadow var(--transition-fast);
+}
+
+.advanced-toggle:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.toggle-arrow {
+  transition: transform var(--transition-fast);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.toggle-arrow.open {
+  transform: rotate(180deg);
+}
+
+.advanced-panel {
+  margin-top: var(--space-sm);
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.advanced-card {
+  padding: var(--space-md);
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+}
+
+.card-label {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-sm);
+  font-size: var(--font-small);
+}
+
+/* 偏好芯片 */
+.preference-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pref-chip {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  font-size: var(--font-small);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+  background: var(--color-bg-surface);
+}
+
+.pref-chip:hover {
+  border-color: var(--color-brand-light);
+}
+
+.pref-chip.active {
+  background: var(--color-brand-gradient);
+  color: white;
+  border-color: transparent;
+}
+
+/* 攻略区域 */
+.guide-card {
+  background: var(--color-bg-hover);
+}
+
+.guide-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+
+.guide-desc {
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+  margin: 0 0 10px;
+}
+
+.guide-input-row {
+  margin-bottom: 8px;
+}
+
+.guide-input-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.guide-input-label {
+  font-size: var(--font-caption);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.guide-textarea {
+  font-size: var(--font-caption);
+}
+
+.extract-error-inline {
+  font-size: var(--font-caption);
+  color: var(--color-error);
+}
+
+/* 骨架预览（在高级面板内） */
+.skeleton-preview {
+  margin-top: 10px;
+}
+
+.skeleton-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.skeleton-notes {
+  padding: 8px 10px;
+  background: var(--color-info-bg);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-caption);
+  color: var(--color-info);
+  margin-bottom: 8px;
+}
+
+.skeleton-day {
+  margin-bottom: 8px;
+  padding: 10px;
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-light);
+}
+
+.skeleton-day-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: var(--font-small);
+}
+
+.skeleton-day-city {
+  font-size: var(--font-caption);
+  color: var(--color-brand);
+}
+
+.skeleton-attractions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.skeleton-attr-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--color-bg-hover);
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-attr-row.attr-deselected {
+  opacity: 0.4;
+}
+
+.skeleton-attr-info {
+  flex: 1;
+}
+
+.skeleton-attr-name {
+  font-size: var(--font-small);
+  font-weight: 600;
+}
+.skeleton-attr-meta {
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+}
+.skeleton-attr-notes {
+  font-size: var(--font-caption);
+  color: var(--color-warning);
+}
+
+/* 兼容旧级联样式（回退） */
+.form-section, .section-header, .section-icon, .section-title,
+.preference-tags, .custom-checkbox-group, .preference-tag,
+.custom-input, .custom-select, .cities-hint, .city-option,
+.custom-textarea, .submit-button, .button-icon, .loading-container,
+.loading-status, .extract-button, .extract-error, .days-display {
+  /* 保留但隐藏，新样式已覆盖 */
 }
 
 @keyframes float {
@@ -767,27 +950,27 @@ const handleSubmit = async () => {
     transform: translateY(0) rotate(0deg);
   }
   50% {
-    transform: translateY(-30px) rotate(180deg);
+    transform: translateY(-20px) rotate(180deg);
   }
 }
 
-/* 页面标题 */
+/* 页面标题 — 压缩高度，去AI味 */
 .page-header {
   text-align: center;
-  margin-bottom: 50px;
-  animation: fadeInDown 0.8s ease-out;
+  margin-bottom: var(--space-xl);
+  animation: fadeInDown 0.6s ease-out;
   position: relative;
   z-index: 1;
 }
 
 .icon-wrapper {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-md);
 }
 
 .icon {
-  font-size: 80px;
+  font-size: 44px;
   display: inline-block;
-  animation: bounce 2s infinite;
+  filter: drop-shadow(0 4px 8px rgba(91, 76, 196, 0.2));
 }
 
 @keyframes bounce {
@@ -795,127 +978,124 @@ const handleSubmit = async () => {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-20px);
+    transform: translateY(-8px);
   }
 }
 
 .page-title {
-  font-size: 56px;
-  font-weight: 800;
-  color: #ffffff;
-  margin-bottom: 16px;
-  text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.3);
-  letter-spacing: 2px;
+  font-size: var(--font-heading-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-sm);
+  letter-spacing: -0.5px;
 }
 
 .page-subtitle {
-  font-size: 20px;
-  color: rgba(255, 255, 255, 0.95);
+  font-size: var(--font-body);
+  color: var(--color-text-tertiary);
   margin: 0;
-  font-weight: 300;
+  font-weight: 400;
 }
 
-/* 表单卡片 */
+/* 表单卡片 — 去除全屏渐变，改为纯白单卡片 */
 .form-card {
-  max-width: 1400px;
+  max-width: 860px;
   margin: 0 auto;
-  border-radius: 24px;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4);
-  animation: fadeInUp 0.8s ease-out;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  animation: fadeInUp 0.6s ease-out;
   position: relative;
   z-index: 1;
-  backdrop-filter: blur(10px);
-  background: rgba(255, 255, 255, 0.98) !important;
+  background: var(--color-bg-surface) !important;
 }
 
-/* 表单分区 */
+/* 表单分区 — 更精致的卡片式分区 */
 .form-section {
-  margin-bottom: 32px;
-  padding: 24px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
-  border-radius: 16px;
-  border: 1px solid #e8e8e8;
-  transition: all 0.3s ease;
+  margin-bottom: var(--space-md);
+  padding: var(--space-lg);
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  transition: box-shadow var(--transition-fast);
 }
 
 .form-section:hover {
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.15);
-  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
 
 .section-header {
   display: flex;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #667eea;
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 2px solid var(--color-brand);
 }
 
 .section-icon {
-  font-size: 24px;
-  margin-right: 12px;
+  font-size: 18px;
+  margin-right: 8px;
 }
 
 .section-title {
-  font-size: 18px;
+  font-size: var(--font-heading-sm);
   font-weight: 600;
-  color: #333;
+  color: var(--color-text-primary);
 }
 
 /* 表单标签 */
 .form-label {
-  font-size: 15px;
+  font-size: var(--font-small);
   font-weight: 500;
-  color: #555;
+  color: var(--color-text-secondary);
 }
 
 /* 自定义输入框 */
 .custom-input :deep(.ant-input),
 .custom-input :deep(.ant-picker) {
-  border-radius: 12px;
-  border: 2px solid #e8e8e8;
-  transition: all 0.3s ease;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .custom-input :deep(.ant-input:hover),
 .custom-input :deep(.ant-picker:hover) {
-  border-color: #667eea;
+  border-color: var(--color-brand-light);
 }
 
 .custom-input :deep(.ant-input:focus),
 .custom-input :deep(.ant-picker-focused) {
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  border-color: var(--color-brand);
+  box-shadow: 0 0 0 3px rgba(91, 76, 196, 0.08);
 }
 
 /* 自定义选择框 */
 .custom-select :deep(.ant-select-selector) {
-  border-radius: 12px !important;
-  border: 2px solid #e8e8e8 !important;
-  transition: all 0.3s ease;
+  border-radius: var(--radius-sm) !important;
+  border: 1px solid var(--color-border) !important;
+  transition: border-color var(--transition-fast);
 }
 
 .custom-select:hover :deep(.ant-select-selector) {
-  border-color: #667eea !important;
+  border-color: var(--color-brand-light) !important;
 }
 
 .custom-select :deep(.ant-select-focused .ant-select-selector) {
-  border-color: #667eea !important;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
+  border-color: var(--color-brand) !important;
+  box-shadow: 0 0 0 3px rgba(91, 76, 196, 0.08) !important;
 }
 
 /* 多城市提示文字 */
 .cities-hint {
   margin-top: 6px;
-  font-size: 13px;
-  color: #667eea;
+  font-size: var(--font-caption);
+  color: var(--color-brand);
   font-weight: 500;
 }
 
 /* 城市自动补全下拉选项 */
 .city-option {
   padding: 4px 0;
-  font-size: 14px;
+  font-size: var(--font-small);
 }
 
 /* 天数显示 */
@@ -924,20 +1104,20 @@ const handleSubmit = async () => {
   align-items: center;
   gap: 8px;
   padding: 6px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
+  background: var(--color-brand-gradient);
+  border-radius: var(--radius-full);
   color: white;
 }
 .days-display .days-label {
-  font-size: 13px;
+  font-size: var(--font-caption);
   opacity: 0.9;
 }
 .days-display .days-value {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 700;
 }
 .days-display .days-unit {
-  font-size: 14px;
+  font-size: var(--font-caption);
 }
 
 /* 偏好标签 */
@@ -956,56 +1136,56 @@ const handleSubmit = async () => {
 
 .preference-tag :deep(.ant-checkbox-wrapper) {
   margin: 0 !important;
-  padding: 8px 16px;
-  border: 2px solid #e8e8e8;
-  border-radius: 20px;
-  transition: all 0.3s ease;
-  background: white;
-  font-size: 14px;
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  background: var(--color-bg-surface);
+  font-size: var(--font-small);
+  cursor: pointer;
 }
 
 .preference-tag :deep(.ant-checkbox-wrapper:hover) {
-  border-color: #667eea;
-  background: #f5f7ff;
+  border-color: var(--color-brand-light);
+  background: var(--color-bg-hover);
 }
 
 .preference-tag :deep(.ant-checkbox-wrapper-checked) {
-  border-color: #667eea;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: var(--color-brand);
+  background: var(--color-brand-gradient);
   color: white;
 }
 
 /* 自定义文本域 */
 .custom-textarea :deep(.ant-input) {
-  border-radius: 12px;
-  border: 2px solid #e8e8e8;
-  transition: all 0.3s ease;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
 }
 
 .custom-textarea :deep(.ant-input:hover) {
-  border-color: #667eea;
+  border-color: var(--color-brand-light);
 }
 
 .custom-textarea :deep(.ant-input:focus) {
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  border-color: var(--color-brand);
+  box-shadow: 0 0 0 3px rgba(91, 76, 196, 0.08);
 }
 
 /* 提交按钮 */
 .submit-button {
-  height: 56px;
-  border-radius: 28px;
-  font-size: 18px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-body);
   font-weight: 600;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--color-brand-gradient);
   border: none;
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
-  transition: all 0.3s ease;
+  box-shadow: var(--shadow-button);
+  transition: all var(--transition-fast);
 }
 
 .submit-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 32px rgba(102, 126, 234, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(91, 76, 196, 0.35);
 }
 
 .submit-button:active {
@@ -1014,22 +1194,22 @@ const handleSubmit = async () => {
 
 .button-icon {
   margin-right: 8px;
-  font-size: 20px;
+  font-size: 18px;
 }
 
 /* 加载容器 */
 .loading-container {
   text-align: center;
-  padding: 24px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
-  border-radius: 16px;
-  border: 2px dashed #667eea;
+  padding: var(--space-lg);
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-xl);
+  border: 1px dashed var(--color-brand-light);
 }
 
 .loading-status {
-  margin-top: 16px;
-  color: #667eea;
-  font-size: 18px;
+  margin-top: var(--space-md);
+  color: var(--color-brand);
+  font-size: var(--font-body);
   font-weight: 500;
 }
 

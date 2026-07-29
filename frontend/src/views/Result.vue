@@ -48,67 +48,162 @@
     </div>
 
     <div v-if="tripPlan" class="content-wrapper">
-      <!-- 侧边导航 -->
-      <div class="side-nav">
-        <a-affix :offset-top="80">
-          <a-menu mode="inline" :selected-keys="[activeSection]" @click="scrollToSection">
-            <a-menu-item key="overview">
-              <span>📋 行程概览</span>
-            </a-menu-item>
-            <a-menu-item key="budget" v-if="tripPlan.budget">
-              <span>💰 预算明细</span>
-            </a-menu-item>
-            <a-menu-item key="transport" v-if="tripPlan.inter_city_transport && tripPlan.inter_city_transport.length > 0">
-              <span>🚄 跨城交通</span>
-            </a-menu-item>
-            <a-menu-item key="map">
-              <span>📍 景点地图</span>
-            </a-menu-item>
-            <a-sub-menu key="days" title="📅 每日行程">
-              <a-menu-item v-for="(day, index) in tripPlan.days" :key="`day-${index}`">
-                第{{ day.day_index + 1 }}天
-              </a-menu-item>
-            </a-sub-menu>
-            <a-menu-item key="weather" v-if="tripPlan.weather_info && tripPlan.weather_info.length > 0">
-              <span>🌤️ 天气信息</span>
-            </a-menu-item>
-          </a-menu>
-        </a-affix>
+      <!-- ====== 摘要卡片（首屏顶部） ====== -->
+      <div class="summary-bar">
+        <div class="summary-card">
+          <div class="summary-icon">📍</div>
+          <div class="summary-info">
+            <div class="summary-route">{{ tripPlan.departure_city }} → {{ tripPlan.cities.join(' → ') }}</div>
+            <div class="summary-meta">
+              <span>{{ tripPlan.start_date }} ~ {{ tripPlan.end_date }}</span>
+              <span class="meta-sep">·</span>
+              <span>{{ tripPlan.days.length }}天行程</span>
+              <span class="meta-sep">·</span>
+              <span v-if="tripPlan.budget">预算 ¥{{ tripPlan.budget.total.toLocaleString() }}</span>
+            </div>
+          </div>
+          <!-- 预算迷你条形图 -->
+          <div class="summary-budget-bar" v-if="tripPlan.budget">
+            <div class="bar-segment bar-attractions" :style="{ width: budgetPercent('attractions') }" title="门票"></div>
+            <div class="bar-segment bar-hotels" :style="{ width: budgetPercent('hotels') }" title="住宿"></div>
+            <div class="bar-segment bar-meals" :style="{ width: budgetPercent('meals') }" title="餐饮"></div>
+            <div class="bar-segment bar-transport" :style="{ width: budgetPercent('transport') }" title="交通"></div>
+            <div class="bar-segment bar-intercity" :style="{ width: budgetPercent('intercity') }" title="跨城"></div>
+          </div>
+        </div>
       </div>
 
-      <!-- 主内容区 -->
-      <div class="main-content">
-        <!-- 顶部信息区:左侧概览+预算,右侧地图 -->
-        <div class="top-info-section">
-          <!-- 左侧:行程概览和预算明细 -->
-          <div class="left-info">
-            <!-- 行程概览 -->
-            <a-card id="overview" :bordered="false" class="overview-card">
-              <template #title>
-                <span>{{ tripPlan.cities.join(' → ') }}旅行计划</span>
-              </template>
-              <div class="overview-content">
-                <div class="info-item">
-                  <span class="info-label">🏠 出发城市:</span>
-                  <span class="info-value">{{ tripPlan.departure_city }}</span>
-                </div>
-                <div class="info-item">
-                  <span class="info-label">📍 目的地:</span>
-                  <span class="info-value">{{ tripPlan.cities.join(' → ') }}</span>
-                </div>
-                <div class="info-item">
-                  <span class="info-label">📅 日期:</span>
-                  <span class="info-value">{{ tripPlan.start_date }} 至 {{ tripPlan.end_date }}</span>
-                </div>
-                <div class="info-item">
-                  <span class="info-label">💡 建议:</span>
-                  <span class="info-value">{{ tripPlan.overall_suggestions }}</span>
-                </div>
-              </div>
+      <div class="main-layout">
+        <!-- 侧边导航 -->
+        <div class="side-nav">
+          <a-affix :offset-top="88">
+            <div class="nav-card">
+              <a-menu mode="inline" :selected-keys="[activeSection]" @click="scrollToSection">
+                <a-menu-item key="overview">行程概览</a-menu-item>
+                <a-menu-item key="budget" v-if="tripPlan.budget">预算明细</a-menu-item>
+                <a-menu-item key="transport" v-if="tripPlan.inter_city_transport?.length">跨城交通</a-menu-item>
+                <a-menu-item key="map">景点地图</a-menu-item>
+                <a-sub-menu key="days" title="每日行程">
+                  <a-menu-item v-for="(day, index) in tripPlan.days" :key="`day-${index}`">
+                    Day {{ day.day_index + 1 }}
+                  </a-menu-item>
+                </a-sub-menu>
+                <a-menu-item key="weather" v-if="tripPlan.weather_info?.length">天气信息</a-menu-item>
+              </a-menu>
+            </div>
+          </a-affix>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-content">
+          <!-- 每日行程 — 默认展开，首屏直接可见 -->
+          <div id="overview" class="section-card">
+            <div class="section-title-row">
+              <span>📅 每日行程</span>
+              <a-button v-if="!editMode" size="small" @click="enterEditMode">✏️ 编辑</a-button>
+            </div>
+
+            <!-- ===== 列表视图（查看 + 编辑） ===== -->
+            <a-card v-if="viewMode === 'list'" :bordered="false" style="box-shadow: none;">
+              <a-collapse v-model:activeKey="activeDays" accordion>
+                <a-collapse-panel
+                  v-for="(day, index) in tripPlan!.days"
+                  :key="index"
+                  :id="`day-${index}`"
+                >
+                  <template #header>
+                    <div class="day-header">
+                      <span class="day-badge-sm">Day {{ day.day_index + 1 }}</span>
+                      <span class="day-city-tag" v-if="day.city">{{ day.city }}</span>
+                      <span class="day-date-sm">{{ day.date }}</span>
+                    </div>
+                  </template>
+
+                  <!-- 查看模式：时间轴卡片 -->
+                  <div v-if="!editMode" class="day-timeline">
+                    <div class="timeline-attr" v-for="(attr, attrIdx) in day.attractions" :key="attrIdx">
+                      <div class="timeline-dot">{{ attrIdx + 1 }}</div>
+                      <div class="timeline-card">
+                        <div class="tl-card-header">
+                          <span class="tl-name">{{ attr.name }}</span>
+                          <span class="tl-duration">{{ attr.visit_duration }}min</span>
+                        </div>
+                        <div class="tl-card-body" v-if="attr.description">{{ attr.description }}</div>
+                        <div class="tl-card-tags">
+                          <a-tag v-if="attr.category" size="small">{{ attr.category }}</a-tag>
+                          <a-tag v-if="attr.ticket_price" color="orange" size="small">¥{{ attr.ticket_price }}</a-tag>
+                          <a-tag v-if="attr.recommended_time" color="green" size="small">{{ attr.recommended_time }}</a-tag>
+                          <a-tag v-if="attr.source_guide_index !== undefined" color="blue" size="small">攻略{{ attr.source_guide_index + 1 }}</a-tag>
+                        </div>
+                        <div v-if="attr.notes" class="tl-card-notes">💡 {{ attr.notes }}</div>
+                      </div>
+                    </div>
+                    <!-- 酒店 -->
+                    <div v-if="day.hotel" class="timeline-hotel">
+                      🏨 {{ day.hotel.name }} · {{ day.hotel.type }} · ¥{{ day.hotel.estimated_cost || '?' }}/晚
+                    </div>
+                  </div>
+
+                  <!-- 编辑模式 -->
+                  <template v-else>
+                    <DayEditorHeader
+                      :day="day"
+                      :can-delete-day="tripPlan!.days.length > 1"
+                      @update:field="(f, v) => updateDayInfo(day.day_index, f, v)"
+                      @duplicate="duplicateDay(day.day_index)"
+                      @add-day-after="addDay(day.day_index)"
+                      @delete-day="deleteDay(day.day_index)"
+                    />
+                    <div class="editable-attractions">
+                      <EditableAttractionCard
+                        v-for="(attr, attrIdx) in day.attractions" :key="attrIdx"
+                        :attr="attr"
+                        :can-move-up="attrIdx > 0"
+                        :can-move-down="attrIdx < day.attractions.length - 1"
+                        @update:field="(f, v) => updateAttr(day.day_index, attrIdx, f, v)"
+                        @move-up="moveAttraction(day.day_index, attrIdx, attrIdx - 1)"
+                        @move-down="moveAttraction(day.day_index, attrIdx, attrIdx + 1)"
+                        @move-to-day="moveDayFromDay = day.day_index; moveDayFromIndex = attrIdx; moveDayModalVisible = true"
+                        @delete="pushSnapshot(); deleteAttr(day.day_index, attrIdx)"
+                      />
+                      <a-button size="small" type="dashed" block @click="pushSnapshot(); addAttraction(day.day_index)">+ 添加景点</a-button>
+                    </div>
+                    <div style="margin-top: 12px;">
+                      <EditableHotelCard v-if="day.hotel" :hotel="day.hotel" @update:field="(f, v) => updateHotel(day.day_index, f, v)" @replace="() => {}" />
+                      <EditableMealList
+                        :meals="day.meals"
+                        @update-meal="(idx, f, v) => updateMeal(day.day_index, idx, f, v)"
+                        @delete-meal="(idx) => { pushSnapshot(); deleteMeal(day.day_index, idx) }"
+                        @add-meal="() => { pushSnapshot(); addMeal(day.day_index) }"
+                      />
+                    </div>
+                  </template>
+                </a-collapse-panel>
+              </a-collapse>
             </a-card>
 
+            <!-- 行程概览 + 跨城交通（折叠在下方） -->
+            <div class="section-card" v-if="tripPlan.inter_city_transport?.length">
+              <div class="section-title-row">🚄 跨城交通</div>
+              <div class="transport-list">
+                <div v-for="(transport, index) in tripPlan.inter_city_transport" :key="index" class="transport-item">
+                  <div class="transport-route">
+                    <span class="transport-from">{{ transport.from_city }}</span>
+                    <span class="transport-arrow">→</span>
+                    <span class="transport-to">{{ transport.to_city }}</span>
+                  </div>
+                  <div class="transport-detail">
+                    <a-tag :color="getTransportColor(transport.mode)">{{ transport.mode }}</a-tag>
+                    <span class="transport-duration">⏱️ {{ transport.duration }}</span>
+                    <span class="transport-cost">💰 ¥{{ transport.estimated_cost }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- 预算明细 -->
-            <a-card id="budget" v-if="tripPlan.budget" title="💰 预算明细" :bordered="false" class="budget-card">
+            <div id="budget" class="section-card" v-if="tripPlan.budget">
+              <div class="section-title-row">💰 预算明细</div>
               <div class="budget-grid">
                 <div class="budget-item">
                   <div class="budget-label">🚄 跨城交通</div>
@@ -135,46 +230,14 @@
                 <span class="total-label">预估总费用</span>
                 <span class="total-value">¥{{ tripPlan.budget.total }}</span>
               </div>
-            </a-card>
+            </div>
 
-            <!-- 跨城交通方案 -->
-            <a-card
-              id="transport"
-              v-if="tripPlan.inter_city_transport && tripPlan.inter_city_transport.length > 0"
-              title="🚄 跨城交通方案"
-              :bordered="false"
-              class="transport-card"
-            >
-              <div class="transport-list">
-                <div
-                  v-for="(transport, index) in tripPlan.inter_city_transport"
-                  :key="index"
-                  class="transport-item"
-                >
-                  <div class="transport-route">
-                    <span class="transport-from">{{ transport.from_city }}</span>
-                    <span class="transport-arrow">→</span>
-                    <span class="transport-to">{{ transport.to_city }}</span>
-                  </div>
-                  <div class="transport-detail">
-                    <a-tag :color="getTransportColor(transport.mode)">{{ transport.mode }}</a-tag>
-                    <span class="transport-duration">⏱️ {{ transport.duration }}</span>
-                    <span class="transport-cost">💰 ¥{{ transport.estimated_cost }}</span>
-                  </div>
-                  <div v-if="transport.description" class="transport-desc">
-                    💡 {{ transport.description }}
-                  </div>
-                </div>
-              </div>
-            </a-card>
-          </div>
+            <!-- 地图 -->
+            <div id="map" class="section-card">
+              <div class="section-title-row">📍 景点地图</div>
+              <div class="map-wrapper" style="min-height: 400px; position: relative;">
 
-          <!-- 右侧:地图 -->
-          <div class="right-map">
-            <a-card id="map" title="📍 景点地图" :bordered="false" class="map-card">
-              <!-- 地图容器始终存在于DOM中，错误/加载状态覆盖在上面 -->
-              <div class="map-wrapper">
-                <!-- 地图容器：始终渲染，不参与v-if切换 -->
+
                 <div id="amap-container" class="map-container"></div>
 
                 <!-- 地图加载失败时的降级提示（覆盖层） -->
@@ -210,7 +273,9 @@
                   <div class="map-loading-sub">获取高德地图 SDK，请稍候</div>
                 </div>
               </div>
-            </a-card>
+            </div>
+
+            <!-- 每日行程（下面已经通过section-card渲染了） -->
           </div>
         </div>
 
@@ -579,6 +644,21 @@ const cancelEdit = () => {
 // P013-2 修复：视图切换前保存快照，防止未保存的新增数据丢失
 function onViewModeChange() {
   pushSnapshot()
+}
+
+// 预算条形图百分比计算
+function budgetPercent(cat: 'attractions' | 'hotels' | 'meals' | 'transport' | 'intercity'): string {
+  if (!tripPlan.value?.budget || tripPlan.value.budget.total <= 0) return '0%'
+  const b = tripPlan.value.budget
+  const map: Record<string, number> = {
+    attractions: b.total_attractions,
+    hotels: b.total_hotels,
+    meals: b.total_meals,
+    transport: b.total_transportation,
+    intercity: b.total_inter_city_transport,
+  }
+  const val = map[cat] || 0
+  return Math.round((val / b.total) * 100) + '%'
 }
 
 // watch 地图联动：编辑模式下景点变化实时更新标记
@@ -1209,13 +1289,13 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 <style scoped>
 .result-container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-  padding: 40px 20px;
+  background: var(--color-bg-page);
+  padding: var(--space-lg) 20px;
 }
 
 .page-header {
   max-width: 1200px;
-  margin: 0 auto 30px;
+  margin: 0 auto var(--space-lg);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1223,42 +1303,232 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 }
 
 .back-button {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-weight: 500;
 }
 
 /* 内容布局 */
 .content-wrapper {
-  max-width: 1400px;
+  max-width: 1280px;
   margin: 0 auto;
-  display: flex;
-  gap: 24px;
 }
 
-.side-nav {
-  width: 240px;
+/* 摘要横幅 */
+.summary-bar {
+  margin-bottom: var(--space-lg);
+}
+
+.summary-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  gap: var(--space-lg);
+}
+
+.summary-icon { font-size: 28px; flex-shrink: 0; }
+
+.summary-info { flex: 1; }
+
+.summary-route {
+  font-size: var(--font-heading-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.summary-meta {
+  font-size: var(--font-small);
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+}
+
+.meta-sep { margin: 0 6px; color: var(--color-border); }
+
+/* 预算迷你条形图 */
+.summary-budget-bar {
+  display: flex;
+  height: 8px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: var(--color-bg-hover);
+  width: 200px;
   flex-shrink: 0;
 }
 
+.bar-segment { height: 100%; transition: width var(--transition-normal); }
+.bar-attractions { background: #10b981; }
+.bar-hotels { background: #3b82f6; }
+.bar-meals { background: #f59e0b; }
+.bar-transport { background: #8b5cf6; }
+.bar-intercity { background: #ef4444; }
+
+/* 主布局 */
+.main-layout {
+  display: flex;
+  gap: var(--space-lg);
+}
+
+.side-nav { width: 200px; flex-shrink: 0; }
+
+.nav-card {
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.nav-card :deep(.ant-menu) {
+  border: none;
+  border-radius: var(--radius-lg);
+}
+
+.main-content { flex: 1; min-width: 0; }
+
+/* 分区卡片 */
+.section-card {
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-md);
+  font-size: var(--font-heading-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+/* 时间轴 */
+.day-timeline { padding-left: 8px; }
+
+.timeline-attr {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.timeline-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-brand-gradient);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-caption);
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.timeline-card {
+  flex: 1;
+  background: var(--color-bg-hover);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-light);
+}
+
+.tl-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tl-name { font-weight: 600; font-size: var(--font-body); }
+
+.tl-duration {
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-surface);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.tl-card-body {
+  font-size: var(--font-small);
+  color: var(--color-text-secondary);
+  margin-top: 6px;
+  line-height: var(--line-height-body);
+}
+
+.tl-card-tags { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+
+.tl-card-notes {
+  margin-top: 6px;
+  font-size: var(--font-caption);
+  color: var(--color-warning);
+  background: var(--color-warning-bg);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.timeline-hotel {
+  padding: 8px 12px;
+  margin-left: 40px;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+  border-radius: var(--radius-md);
+  font-size: var(--font-small);
+  color: var(--color-text-secondary);
+}
+
+/* Collapse header — 紧凑样式 */
+.day-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.day-badge-sm {
+  font-weight: 700;
+  font-size: var(--font-body);
+  color: var(--color-brand);
+}
+
+.day-city-tag {
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-hover);
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.day-date-sm {
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+  margin-left: auto;
+}
+
 .side-nav :deep(.ant-menu) {
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  background: white;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  background: var(--color-bg-surface);
 }
 
 .side-nav :deep(.ant-menu-item) {
   margin: 4px 8px;
-  border-radius: 8px;
-  transition: all 0.3s ease;
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast);
 }
 
 .side-nav :deep(.ant-menu-item-selected) {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--color-brand-gradient);
   color: white;
 }
 
 .side-nav :deep(.ant-menu-item:hover) {
-  background: rgba(102, 126, 234, 0.1);
+  background: rgba(91, 76, 196, 0.06);
 }
 
 .main-content {
@@ -1320,89 +1590,83 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 
 /* 天气卡片样式 */
 .weather-card {
-  background: linear-gradient(135deg, #e0f7fa 0%, #b2ebf2 100%);
-  border: none !important;
-  transition: all 0.3s ease;
+  background: #ecfdf5;
+  border: 1px solid rgba(16, 185, 129, 0.15) !important;
+  transition: box-shadow var(--transition-fast);
 }
 
 .weather-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
 }
 
 .weather-date {
-  font-size: 16px;
-  font-weight: bold;
-  color: #00796b;
-  margin-bottom: 12px;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: #065f46;
+  margin-bottom: var(--space-sm);
   text-align: center;
 }
 
 .weather-info-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
 }
 
 .weather-icon {
-  font-size: 24px;
+  font-size: 20px;
 }
 
 .weather-label {
-  font-size: 12px;
-  color: #666;
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
 }
 
 .weather-value {
-  font-size: 16px;
+  font-size: var(--font-small);
   font-weight: 600;
-  color: #00796b;
+  color: #065f46;
 }
 
 .weather-wind {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(0, 121, 107, 0.2);
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid rgba(16, 185, 129, 0.15);
   text-align: center;
-  color: #00796b;
-  font-size: 14px;
+  color: #065f46;
+  font-size: var(--font-caption);
 }
 
 /* 回到顶部按钮 */
 .back-top-button {
-  width: 50px;
-  height: 50px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  width: 44px;
+  height: 44px;
+  background: var(--color-brand-gradient);
   color: white;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 18px;
   font-weight: bold;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-md);
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .back-top-button:hover {
-  transform: scale(1.1);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  transform: scale(1.08);
+  box-shadow: var(--shadow-lg);
 }
 
 /* 酒店卡片样式 */
 .hotel-card {
-  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
   border: none !important;
 }
 
-.hotel-card :deep(.ant-card-head) {
-  background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
-}
-
 .hotel-title {
-  color: white !important;
   font-weight: 600;
 }
 
@@ -1432,25 +1696,27 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 .overview-content {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-sm);
 }
 
 .info-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .info-label {
-  font-size: 14px;
+  font-size: var(--font-caption);
   font-weight: 600;
-  color: #666;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .info-value {
-  font-size: 15px;
-  color: #333;
-  line-height: 1.6;
+  font-size: var(--font-body);
+  color: var(--color-text-primary);
+  line-height: var(--line-height-body);
 }
 
 /* 预算卡片 */
@@ -1461,47 +1727,47 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 .budget-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
 }
 
 .budget-item {
   text-align: center;
-  padding: 12px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
+  padding: var(--space-sm);
+  background: var(--color-bg-hover);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-light);
 }
 
 .budget-label {
-  font-size: 13px;
-  color: #666;
-  margin-bottom: 8px;
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs);
 }
 
 .budget-value {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
-  color: #1890ff;
+  color: var(--color-brand);
 }
 
 .budget-total {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 8px;
+  padding: var(--space-md);
+  background: var(--color-brand-gradient);
+  border-radius: var(--radius-md);
   color: white;
 }
 
 .total-label {
-  font-size: 16px;
+  font-size: var(--font-body);
   font-weight: 600;
 }
 
 .total-value {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 700;
 }
 
@@ -1586,82 +1852,44 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   flex: 1;
 }
 
-/* 卡片样式优化 */
+/* 卡片样式优化 — 不再全局强制渐变标题 */
 :deep(.ant-card) {
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   margin-bottom: 20px;
-  transition: all 0.3s ease;
+  transition: box-shadow var(--transition-fast);
   animation: fadeInUp 0.6s ease-out;
 }
 
 :deep(.ant-card:hover) {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-md);
 }
 
 :deep(.ant-card-head) {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white !important;
-  border-radius: 12px 12px 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   font-weight: 600;
-}
-
-:deep(.ant-card-head-title) {
-  color: white !important;
-  font-size: 18px;
-}
-
-:deep(.ant-card-head-title span) {
-  color: white !important;
-}
-
-/* Collapse样式 */
-:deep(.ant-collapse) {
-  border: none;
-  background: transparent;
-}
-
-:deep(.ant-collapse-item) {
-  margin-bottom: 16px;
-  border: 1px solid #e8e8e8;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-:deep(.ant-collapse-header) {
-  background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
-  padding: 16px 20px !important;
-  font-weight: 600;
-}
-
-:deep(.ant-collapse-content) {
-  border-top: 1px solid #e8e8e8;
-}
-
-:deep(.ant-collapse-content-box) {
-  padding: 20px;
 }
 
 /* 统计卡片样式 */
 :deep(.ant-statistic-title) {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 8px;
+  font-size: var(--font-small);
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-sm);
 }
 
 :deep(.ant-statistic-content) {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 600;
-  color: #1890ff;
+  color: var(--color-brand);
 }
 
 /* 景点卡片样式 */
 :deep(.ant-list-item) {
-  transition: all 0.3s ease;
+  transition: transform var(--transition-fast);
 }
 
 :deep(.ant-list-item:hover) {
-  transform: scale(1.02);
+  transform: scale(1.01);
 }
 
 /* 动画 */
@@ -1689,36 +1917,53 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 
 /* 看板视图 */
 .kanban-view {
-  margin-top: 20px;
+  margin-top: var(--space-lg);
 }
 
 .kanban-toolbar {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-md);
 }
 
 .kanban-columns {
   display: flex;
-  gap: 16px;
+  gap: var(--space-md);
   overflow-x: auto;
-  padding-bottom: 16px;
+  padding-bottom: var(--space-md);
 }
 
 /* 可编辑景点列表 */
 .editable-attractions {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-xs);
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
   .result-container {
-    padding: 20px 10px;
+    padding: var(--space-md) 10px;
   }
 
   .page-header {
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space-md);
+  }
+
+  .content-wrapper {
+    flex-direction: column;
+  }
+
+  .side-nav {
+    width: 100%;
+  }
+
+  .top-info-section {
+    flex-direction: column;
+  }
+
+  .left-info {
+    flex: none;
+    width: 100%;
   }
 }
 
@@ -1729,33 +1974,32 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
 .transport-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-md);
 }
 .transport-item {
-  padding: 16px;
-  background: linear-gradient(135deg, #f0f7ff 0%, #e6f0ff 100%);
-  border-radius: 12px;
-  border: 1px solid #d6e4ff;
-  transition: all 0.3s ease;
+  padding: var(--space-md);
+  background: var(--color-info-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  transition: box-shadow var(--transition-fast);
 }
 .transport-item:hover {
-  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.15);
-  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
 .transport-route {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 10px;
-  font-size: 18px;
+  margin-bottom: 8px;
+  font-size: var(--font-heading-sm);
   font-weight: 600;
 }
 .transport-from, .transport-to {
-  color: #1a1a1a;
+  color: var(--color-text-primary);
 }
 .transport-arrow {
-  color: #1890ff;
-  font-size: 20px;
+  color: var(--color-brand);
+  font-size: 18px;
 }
 .transport-detail {
   display: flex;
