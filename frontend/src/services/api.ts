@@ -1,5 +1,11 @@
 import axios from 'axios'
-import type { TripFormData, TripPlanResponse } from '@/types'
+import type {
+  TripFormData,
+  TripPlanResponse,
+  GuideExtractionRequest,
+  GuideExtractionResponse,
+  GuideConfirmRequest,
+} from '@/types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
@@ -45,6 +51,42 @@ export async function generateTripPlan(formData: TripFormData): Promise<TripPlan
   } catch (error: any) {
     console.error('生成旅行计划失败:', error)
     throw new Error(error.response?.data?.detail || error.message || '生成旅行计划失败')
+  }
+}
+
+/**
+ * 提取攻略骨架（两段式流程第一步）
+ */
+export async function extractGuide(
+  request: GuideExtractionRequest
+): Promise<GuideExtractionResponse> {
+  try {
+    const response = await apiClient.post<GuideExtractionResponse>(
+      '/api/trip/extract-guide',
+      request
+    )
+    return response.data
+  } catch (error: any) {
+    console.error('攻略提取失败:', error)
+    throw new Error(error.response?.data?.detail || error.message || '攻略提取失败')
+  }
+}
+
+/**
+ * 基于确认骨架生成完整行程（两段式流程第二步）
+ */
+export async function planFromSkeleton(
+  request: GuideConfirmRequest
+): Promise<TripPlanResponse> {
+  try {
+    const response = await apiClient.post<TripPlanResponse>(
+      '/api/trip/plan-from-skeleton',
+      request
+    )
+    return response.data
+  } catch (error: any) {
+    console.error('骨架驱动规划失败:', error)
+    throw new Error(error.response?.data?.detail || error.message || '行程生成失败')
   }
 }
 

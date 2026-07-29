@@ -196,8 +196,169 @@
           </a-form-item>
         </div>
 
-        <!-- 提交按钮 -->
-        <a-form-item>
+        <!-- 第四步:参考攻略（可选） -->
+        <div class="form-section">
+          <div class="section-header">
+            <span class="section-icon">📋</span>
+            <span class="section-title">参考攻略（可选）</span>
+            <a-tag color="purple" style="margin-left: 8px;">新功能</a-tag>
+          </div>
+          <p class="section-desc">
+            粘贴小红书/马蜂窝等平台上的旅行攻略文本，AI 将自动提取景点、时长、避坑提示等信息。
+            支持同时粘贴多篇攻略，系统会自动融合去重。
+          </p>
+
+          <!-- 攻略输入区（未提取时显示） -->
+          <div v-if="!showSkeletonPreview">
+            <div class="guide-inputs">
+              <div
+                v-for="(guide, index) in guideTexts"
+                :key="index"
+                class="guide-input-row"
+              >
+                <div class="guide-input-header">
+                  <span class="guide-input-label">📄 攻略 #{{ index + 1 }}</span>
+                  <a-button
+                    v-if="guideTexts.length > 1"
+                    size="small"
+                    danger
+                    type="text"
+                    @click="removeGuide(index)"
+                  >
+                    移除
+                  </a-button>
+                </div>
+                <a-textarea
+                  v-model:value="guideTexts[index]"
+                  :placeholder="index === 0 ? '在此粘贴攻略文本，例如：\nDay1：天安门→故宫→景山公园，晚上住鼓楼附近\nDay2：颐和园半天→圆明园→晚上去三里屯吃饭' : '粘贴第二篇攻略...'"
+                  :rows="4"
+                  size="large"
+                  class="custom-textarea guide-textarea"
+                />
+              </div>
+              <a-button type="dashed" block @click="addGuide" style="margin-top: 8px;">
+                + 添加另一篇攻略
+              </a-button>
+            </div>
+
+            <a-button
+              type="primary"
+              :loading="extracting"
+              :disabled="!hasGuideContent"
+              @click="handleExtractGuide"
+              size="large"
+              style="margin-top: 16px; width: 100%;"
+              class="extract-button"
+            >
+              <template v-if="!extracting">
+                🔍 提取攻略信息
+              </template>
+              <template v-else>
+                正在提取攻略骨架...
+              </template>
+            </a-button>
+
+            <div v-if="extractError" class="extract-error">
+              ⚠️ {{ extractError }}
+            </div>
+          </div>
+
+          <!-- 骨架预览区（提取完成后显示） -->
+          <div v-if="showSkeletonPreview && skeletonData" class="skeleton-preview">
+            <a-divider>📋 攻略提取结果预览</a-divider>
+
+            <div class="skeleton-header">
+              <a-space>
+                <a-tag color="blue">识别 {{ skeletonData.total_days }} 天行程</a-tag>
+                <a-tag v-if="skeletonData.source_count > 1" color="green">
+                  融合 {{ skeletonData.source_count }} 篇攻略
+                </a-tag>
+                <a-tag v-for="tag in skeletonData.overall_tags" :key="tag" color="purple">
+                  {{ tag }}
+                </a-tag>
+              </a-space>
+              <a-button size="small" type="text" @click="resetGuideExtraction">
+                重新提取
+              </a-button>
+            </div>
+
+            <div
+              v-if="skeletonData.overall_notes"
+              class="skeleton-notes"
+            >
+              💡 {{ skeletonData.overall_notes }}
+            </div>
+
+            <!-- 每日景点列表（可勾选/删除） -->
+            <div
+              v-for="day in skeletonData.days"
+              :key="day.day_index"
+              class="skeleton-day"
+            >
+              <div class="skeleton-day-header">
+                <strong>📅 第{{ day.day_index + 1 }}天</strong>
+                <span class="skeleton-day-city" v-if="day.city">{{ day.city }}</span>
+                <span class="skeleton-day-desc">{{ day.description }}</span>
+              </div>
+              <div class="skeleton-attractions">
+                <div
+                  v-for="(attr, attrIdx) in day.attractions"
+                  :key="attrIdx"
+                  class="skeleton-attr-row"
+                  :class="{ 'attr-deselected': !attr.selected }"
+                >
+                  <a-checkbox
+                    v-model:checked="attr.selected"
+                    class="skeleton-checkbox"
+                  />
+                  <div class="skeleton-attr-info">
+                    <span class="skeleton-attr-name">
+                      {{ attr.name }}
+                      <a-tag v-if="attr.source_guide_index !== undefined" size="small" color="blue" style="margin-left: 4px;">
+                        攻略{{ attr.source_guide_index + 1 }}
+                      </a-tag>
+                    </span>
+                    <span class="skeleton-attr-meta">
+                      {{ attr.visit_duration }}分钟
+                      <template v-if="attr.recommended_time"> · {{ attr.recommended_time }}</template>
+                      <template v-if="attr.category"> · {{ attr.category }}</template>
+                    </span>
+                    <span v-if="attr.notes" class="skeleton-attr-notes">💡 {{ attr.notes }}</span>
+                  </div>
+                  <a-button
+                    size="small"
+                    type="text"
+                    danger
+                    @click="removeSkeletonAttr(day.day_index, attrIdx)"
+                    class="skeleton-remove-btn"
+                  >
+                    ✕
+                  </a-button>
+                </div>
+              </div>
+              <!-- 餐饮建议 -->
+              <div v-if="day.meal_suggestions.length > 0" class="skeleton-meals">
+                🍽️ {{ day.meal_suggestions.join(' · ') }}
+              </div>
+            </div>
+
+            <div class="skeleton-actions">
+              <a-button @click="resetGuideExtraction" size="large">
+                重新提取
+              </a-button>
+              <a-button
+                type="primary"
+                size="large"
+                @click="handleConfirmSkeleton"
+              >
+                ✅ 确认骨架，生成完整行程
+              </a-button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 提交按钮（没有攻略时显示） -->
+        <a-form-item v-if="!showSkeletonPreview">
           <a-button
             type="primary"
             html-type="submit"
@@ -216,8 +377,8 @@
           </a-button>
         </a-form-item>
 
-        <!-- 加载进度条 -->
-        <a-form-item v-if="loading">
+        <!-- 骨架确认后生成中的状态 -->
+        <a-form-item v-if="showSkeletonPreview && generating">
           <div class="loading-container">
             <a-progress
               :percent="loadingProgress"
@@ -239,18 +400,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { generateTripPlan } from '@/services/api'
+import { generateTripPlan, extractGuide, planFromSkeleton } from '@/services/api'
 import { searchCities } from '@/data/cities'
-import type { TripFormData } from '@/types'
+import type { TripFormData, GuideExtractionResult } from '@/types'
 import type { Dayjs } from 'dayjs'
 
 const router = useRouter()
 const loading = ref(false)
 const loadingProgress = ref(0)
 const loadingStatus = ref('')
+
+// 攻略相关状态
+const guideTexts = ref<string[]>([''])
+const extracting = ref(false)
+const generating = ref(false)
+const extractError = ref('')
+const showSkeletonPreview = ref(false)
+const skeletonData = ref<GuideExtractionResult | null>(null)
 
 // 出发城市自动补全选项
 const departureCityOptions = ref<{ value: string; label: string }[]>([])
@@ -291,6 +460,151 @@ const handleDestinationCitySearch = (keyword: string) => {
 const handleCitiesChange = (cities: string[]) => {
   // 确保 cities 始终是字符串数组
   formData.cities = cities
+}
+
+// ============ 攻略相关 ============
+
+const hasGuideContent = computed(() => {
+  return guideTexts.value.some(t => t.trim().length > 20)
+})
+
+const addGuide = () => {
+  if (guideTexts.value.length >= 5) {
+    message.warning('最多同时粘贴5篇攻略')
+    return
+  }
+  guideTexts.value.push('')
+}
+
+const removeGuide = (index: number) => {
+  guideTexts.value.splice(index, 1)
+  if (guideTexts.value.length === 0) {
+    guideTexts.value.push('')
+  }
+}
+
+const resetGuideExtraction = () => {
+  showSkeletonPreview.value = false
+  skeletonData.value = null
+  extractError.value = ''
+}
+
+/**
+ * 第一步：提取攻略骨架
+ */
+const handleExtractGuide = async () => {
+  // 过滤掉空文本
+  const validTexts = guideTexts.value.filter(t => t.trim().length > 10)
+
+  if (validTexts.length === 0) {
+    message.warning('请至少粘贴一篇攻略（不少于10个字）')
+    return
+  }
+
+  extracting.value = true
+  extractError.value = ''
+
+  try {
+    const response = await extractGuide({
+      guide_texts: validTexts,
+      cities: formData.cities,
+      travel_days: formData.travel_days,
+    })
+
+    if (response.success && response.data) {
+      skeletonData.value = response.data
+      showSkeletonPreview.value = true
+      message.success(response.message)
+    } else {
+      extractError.value = response.message || '提取失败，请检查攻略内容或重试'
+      message.error(extractError.value)
+    }
+  } catch (error: any) {
+    extractError.value = error.message || '提取失败，请稍后重试'
+    message.error(extractError.value)
+  } finally {
+    extracting.value = false
+  }
+}
+
+const removeSkeletonAttr = (dayIndex: number, attrIndex: number) => {
+  if (!skeletonData.value) return
+  const day = skeletonData.value.days.find(d => d.day_index === dayIndex)
+  if (!day) return
+  day.attractions.splice(attrIndex, 1)
+}
+
+/**
+ * 第二步：确认骨架，生成完整行程
+ */
+const handleConfirmSkeleton = async () => {
+  if (!skeletonData.value) return
+
+  if (!formData.start_date || !formData.end_date) {
+    message.error('请选择日期')
+    return
+  }
+
+  generating.value = true
+  loadingProgress.value = 0
+  loadingStatus.value = '正在基于攻略骨架生成完整行程...'
+
+  const progressInterval = setInterval(() => {
+    if (loadingProgress.value < 90) {
+      loadingProgress.value += 15
+      if (loadingProgress.value <= 40) {
+        loadingStatus.value = '🔍 正在补充景点详情...'
+      } else if (loadingProgress.value <= 60) {
+        loadingStatus.value = '🌤️ 正在查询天气...'
+      } else if (loadingProgress.value <= 80) {
+        loadingStatus.value = '🏨 正在匹配酒店...'
+      } else {
+        loadingStatus.value = '📋 正在生成完整行程...'
+      }
+    }
+  }, 500)
+
+  try {
+    const requestData: TripFormData = {
+      departure_city: formData.departure_city,
+      cities: formData.cities,
+      start_date: formData.start_date!.format('YYYY-MM-DD'),
+      end_date: formData.end_date!.format('YYYY-MM-DD'),
+      travel_days: formData.travel_days,
+      transportation: formData.transportation,
+      accommodation: formData.accommodation,
+      preferences: formData.preferences,
+      free_text_input: formData.free_text_input,
+    }
+
+    const response = await planFromSkeleton({
+      skeleton: skeletonData.value,
+      trip_params: requestData,
+    })
+
+    clearInterval(progressInterval)
+    loadingProgress.value = 100
+    loadingStatus.value = '✅ 完成!'
+
+    if (response.success && response.data) {
+      sessionStorage.setItem('tripPlan', JSON.stringify(response.data))
+      message.success('行程生成成功！已融合攻略建议')
+      setTimeout(() => {
+        router.push('/result')
+      }, 500)
+    } else {
+      message.error(response.message || '生成失败')
+    }
+  } catch (error: any) {
+    clearInterval(progressInterval)
+    message.error(error.message || '生成行程失败，请稍后重试')
+  } finally {
+    setTimeout(() => {
+      generating.value = false
+      loadingProgress.value = 0
+      loadingStatus.value = ''
+    }, 1000)
+  }
 }
 
 // 监听日期变化,自动计算旅行天数
@@ -725,5 +1039,189 @@ const handleSubmit = async () => {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* ============ 攻略相关样式 ============ */
+
+.section-desc {
+  color: #888;
+  font-size: 13px;
+  margin: -12px 0 16px 0;
+  line-height: 1.5;
+}
+
+.guide-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.guide-input-row {
+  background: #fafafa;
+  border-radius: 12px;
+  padding: 12px 16px;
+  border: 1px solid #f0f0f0;
+}
+
+.guide-input-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.guide-input-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #555;
+}
+
+.guide-textarea {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.extract-button {
+  background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%) !important;
+  border: none !important;
+  font-weight: 600;
+}
+
+.extract-error {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: #fff2f0;
+  border: 1px solid #ffccc7;
+  border-radius: 8px;
+  color: #ff4d4f;
+  font-size: 14px;
+}
+
+/* 骨架预览 */
+.skeleton-preview {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+.skeleton-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.skeleton-notes {
+  padding: 10px 14px;
+  background: #e6f7ff;
+  border: 1px solid #91d5ff;
+  border-radius: 8px;
+  color: #0050b3;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.skeleton-day {
+  margin-bottom: 16px;
+  padding: 14px;
+  background: #fafafa;
+  border-radius: 10px;
+  border: 1px solid #f0f0f0;
+}
+
+.skeleton-day-header {
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.skeleton-day-city {
+  background: #f5f0ff;
+  color: #531dab;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.skeleton-day-desc {
+  color: #888;
+  font-size: 13px;
+}
+
+.skeleton-attractions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skeleton-attr-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e8e8e8;
+  transition: all 0.2s;
+}
+
+.skeleton-attr-row.attr-deselected {
+  opacity: 0.45;
+  background: #fafafa;
+}
+
+.skeleton-checkbox {
+  margin-top: 2px;
+}
+
+.skeleton-attr-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.skeleton-attr-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+}
+
+.skeleton-attr-meta {
+  display: block;
+  color: #999;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.skeleton-attr-notes {
+  display: block;
+  color: #fa8c16;
+  font-size: 12px;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.skeleton-remove-btn {
+  flex-shrink: 0;
+  margin-top: -2px;
+}
+
+.skeleton-meals {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #fffbe6;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #ad8b00;
+}
+
+.skeleton-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
 }
 </style>

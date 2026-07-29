@@ -2,11 +2,14 @@
 
 import json
 import concurrent.futures
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from hello_agents import SimpleAgent
 from hello_agents.tools import MCPTool
 from ..services.llm_service import get_llm
-from ..models.schemas import TripRequest, TripPlan, DayPlan, Attraction, Meal, WeatherInfo, Location, Hotel
+from ..models.schemas import (
+    TripRequest, TripPlan, DayPlan, Attraction, Meal,
+    WeatherInfo, Location, Hotel, GuideExtractionResult,
+)
 from ..config import get_settings
 
 # ============ Agent提示词 ============
@@ -538,3 +541,286 @@ def get_trip_planner_agent() -> MultiAgentTripPlanner:
         _multi_agent_planner = MultiAgentTripPlanner()
 
     return _multi_agent_planner
+
+
+# ============ 骨架驱动规划 Prompt ============
+
+SKELETON_PLANNER_PROMPT = """你是行程规划专家。你的任务是基于用户确认的攻略行程骨架，补全细节、适配偏好，生成完整的旅行计划。
+
+**重要：骨架中的景点是用户从真实攻略中确认的，请保留它们的名称和建议，不要随意替换或删除。**
+
+## 工作流程
+
+1. **骨架适配**: 将骨架中的景点按日期排入对应天，保留所有 notes 信息作为 description 的一部分
+2. **景点补全**: 如果某天骨架景点不足（少于2个），使用工具搜索该城市的景点来补充
+3. **酒店推荐**: 根据骨架中的 accommodation 建议区域，使用工具搜索该区域酒店
+4. **天气查询**: 为每个目的地城市查询天气
+5. **跨城交通**: 根据城市间距规划合理交通方式
+
+## 输出格式
+
+请严格按照以下JSON格式返回旅行计划:
+```json
+{
+  "departure_city": "出发城市名称",
+  "cities": ["目的地城市名称"],
+  "start_date": "YYYY-MM-DD",
+  "end_date": "YYYY-MM-DD",
+  "days": [
+    {
+      "date": "YYYY-MM-DD",
+      "day_index": 0,
+      "city": "当天所在城市名",
+      "description": "第1天行程概述",
+      "transportation": "市内交通方式",
+      "accommodation": "住宿类型",
+      "hotel": {
+        "name": "酒店名称",
+        "address": "酒店地址",
+        "location": {"longitude": 116.397128, "latitude": 39.916527},
+        "price_range": "300-500元",
+        "rating": "4.5",
+        "distance": "距离景点2公里",
+        "type": "经济型酒店",
+        "estimated_cost": 400
+      },
+      "attractions": [
+        {
+          "name": "景点名称",
+          "address": "详细地址",
+          "location": {"longitude": 116.397128, "latitude": 39.916527},
+          "visit_duration": 120,
+          "description": "景点描述（包含攻略避坑提示）",
+          "category": "景点类别",
+          "ticket_price": 60,
+          "source_guide_index": 0
+        }
+      ],
+      "meals": [
+        {"type": "breakfast", "name": "早餐推荐", "description": "早餐描述", "estimated_cost": 30},
+        {"type": "lunch", "name": "午餐推荐", "description": "午餐描述", "estimated_cost": 50},
+        {"type": "dinner", "name": "晚餐推荐", "description": "晚餐描述", "estimated_cost": 80}
+      ]
+    }
+  ],
+  "inter_city_transport": [
+    {
+      "from_city": "出发城市/中转城市",
+      "to_city": "下一个目的地城市",
+      "mode": "高铁",
+      "duration": "约4.5小时",
+      "estimated_cost": 550,
+      "description": "交通方案建议"
+    }
+  ],
+  "weather_info": [],
+  "overall_suggestions": "总体建议",
+  "budget": {
+    "total_attractions": 0,
+    "total_hotels": 0,
+    "total_meals": 0,
+    "total_inter_city_transport": 0,
+    "total_transportation": 0,
+    "total": 0
+  }
+}
+```
+
+## 特别提醒
+- 来自攻略的景点，description 中要包含攻略的避坑提示（从 notes 字段获取）
+- 景点 name 不要修改，保持与来源骨架一致
+- source_guide_index 表示来源攻略编号（0-based）
+- 如果攻略骨架天数与 travel_days 不匹配，优先按照骨架天数，多余/不足的天数自行调整
+"""
+
+
+def plan_trip_from_skeleton(
+    request: TripRequest,
+    skeleton: GuideExtractionResult,
+) -> TripPlan:
+    """基于用户确认的攻略骨架生成完整行程
+
+    这是两段式流程的第二步：骨架确认 → 补全细节 → 完整 TripPlan。
+
+    Args:
+        request: 原始行程请求参数
+        skeleton: 用户确认后的攻略骨架（已勾选）
+
+    Returns:
+        TripPlan 完整旅行计划
+    """
+    import concurrent.futures
+
+    print(f"\n{'='*60}")
+    print(f"🦴 开始骨架驱动行程规划...")
+    print(f"出发地: {request.departure_city}")
+    print(f"骨架天数: {skeleton.total_days}天")
+    print(f"骨架景点数: {sum(len(d.attractions) for d in skeleton.days)}个")
+    print(f"{'='*60}\n")
+
+    # 过滤出被勾选的景点
+    confirmed_days = []
+    for day in skeleton.days:
+        selected_attrs = [a for a in day.attractions if a.selected]
+        if selected_attrs:
+            confirmed_days.append({
+                "day_index": day.day_index,
+                "city": day.city,
+                "description": day.description,
+                "transportation": day.transportation,
+                "accommodation": day.accommodation,
+                "attractions": selected_attrs,
+                "meal_suggestions": day.meal_suggestions,
+            })
+
+    if not confirmed_days:
+        # 如果没有勾选任何景点，退化到正常流程
+        print("⚠️ 没有勾选任何骨架景点，使用标准规划流程")
+        planner = get_trip_planner_agent()
+        return planner.plan_trip(request)
+
+    # 获取共享 agent 实例用于搜索
+    planner = get_trip_planner_agent()
+
+    # 并行搜索：天气 + 酒店 + 缺失景点的补全搜索
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(request.cities) * 3) as executor:
+        # 天气
+        weather_futures = {
+            city: executor.submit(planner._run_weather_agent, city)
+            for city in request.cities
+        }
+        # 酒店
+        hotel_futures = {
+            city: executor.submit(planner._run_hotel_agent, request, city)
+            for city in request.cities
+        }
+
+        # 对于骨架中景点不足2个的日期，补充景点搜索
+        supplement_futures = {}
+        for day_data in confirmed_days:
+            if len(day_data["attractions"]) < 2:
+                city = day_data["city"] or request.cities[0]
+                supplement_futures[day_data["day_index"]] = executor.submit(
+                    planner._run_attraction_agent, request, city
+                )
+
+        # 收集结果
+        AGENT_TIMEOUT = 180
+        weather_results = {}
+        for city, fut in weather_futures.items():
+            try:
+                weather_results[city] = fut.result(timeout=AGENT_TIMEOUT)
+            except Exception as e:
+                weather_results[city] = f"（查询失败: {e}）"
+
+        hotel_results = {}
+        for city, fut in hotel_futures.items():
+            try:
+                hotel_results[city] = fut.result(timeout=AGENT_TIMEOUT)
+            except Exception as e:
+                hotel_results[city] = f"（查询失败: {e}）"
+
+        supplement_results = {}
+        for day_idx, fut in supplement_futures.items():
+            try:
+                supplement_results[day_idx] = fut.result(timeout=AGENT_TIMEOUT)
+            except Exception as e:
+                supplement_results[day_idx] = f"（查询失败: {e}）"
+
+    # 构建骨架规划 query
+    skeleton_json = _build_skeleton_context(confirmed_days, skeleton)
+    weather_str = "\n".join(f"【{city}】\n{result}" for city, result in weather_results.items())
+    hotel_str = "\n".join(f"【{city}】\n{result}" for city, result in hotel_results.items())
+
+    planner_query = f"""请基于以下攻略行程骨架生成完整旅行计划：
+
+**基本信息:**
+- 出发城市: {request.departure_city}
+- 目的地城市: {' → '.join(request.cities)}
+- 日期: {request.start_date} 至 {request.end_date}
+- 天数: {request.travel_days}天
+- 市内交通: {request.transportation}
+- 住宿偏好: {request.accommodation}
+- 用户偏好: {', '.join(request.preferences) if request.preferences else '无'}
+- 攻略标签: {', '.join(skeleton.overall_tags) if skeleton.overall_tags else '无'}
+- 攻略整体建议: {skeleton.overall_notes or '无'}
+
+**攻略行程骨架（用户已确认，请保留核心景点和提示）:**
+{skeleton_json}
+
+**天气信息:**
+{weather_str}
+
+**酒店信息:**
+{hotel_str}
+
+**额外要求:**
+{request.free_text_input if request.free_text_input else '无'}
+
+**重要:**
+1. 骨架中的景点必须保留，description 中要包含攻略的避坑提示
+2. 每天至少2-3个景点，骨架不足时从搜索结果中补充
+3. 每个景点标注 source_guide_index 表示来自哪篇攻略
+4. weather_info 从天气查询结果中获取
+5. 规划合理的跨城交通
+"""
+
+    # 调用规划 Agent
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as planner_executor:
+        planner_future = planner_executor.submit(planner.planner_agent.run, planner_query)
+        try:
+            planner_response = planner_future.result(timeout=300)
+        except concurrent.futures.TimeoutError:
+            print("⚠️ 骨架规划超时，使用备用方案")
+            return planner._create_fallback_plan(request)
+
+    # 解析
+    trip_plan = planner._parse_response(planner_response, request)
+
+    # 注入来源标记：如果景点名与骨架匹配，设置 source_guide_index
+    _inject_source_marks(trip_plan, skeleton)
+
+    return trip_plan
+
+
+def _build_skeleton_context(
+    confirmed_days: List[dict],
+    skeleton: GuideExtractionResult,
+) -> str:
+    """将骨架数据序列化为 planner agent 可理解的文本"""
+    parts = []
+    for day in confirmed_days:
+        parts.append(f"--- Day {day['day_index'] + 1} ---")
+        parts.append(f"城市: {day['city']}")
+        parts.append(f"概述: {day['description']}")
+        parts.append(f"交通: {day['transportation'] or '未指定'}")
+        parts.append(f"住宿区域: {day['accommodation'] or '未指定'}")
+        parts.append("景点:")
+        for attr in day["attractions"]:
+            source_tag = f" [来源: 攻略#{attr.source_guide_index + 1}]" if attr.source_guide_index is not None else ""
+            parts.append(f"  - {attr.name} (约{attr.visit_duration}分钟, "
+                        f"{attr.recommended_time or '全天可去'}){source_tag}")
+            if attr.notes:
+                parts.append(f"    提示: {attr.notes}")
+        if day.get("meal_suggestions"):
+            parts.append(f"餐饮建议: {'; '.join(day['meal_suggestions'])}")
+        parts.append("")
+    return "\n".join(parts)
+
+
+def _inject_source_marks(
+    trip_plan: TripPlan,
+    skeleton: GuideExtractionResult,
+) -> None:
+    """回填来源标记：匹配骨架景点名，写入 source_guide_index"""
+    # 构建骨架景点名 → source_guide_index 的映射
+    skeleton_map = {}
+    for day in skeleton.days:
+        for attr in day.attractions:
+            if attr.selected and attr.source_guide_index is not None:
+                skeleton_map[attr.name] = attr.source_guide_index
+
+    for day in trip_plan.days:
+        for attr in day.attractions:
+            if attr.name in skeleton_map:
+                attr.source_guide_index = skeleton_map[attr.name]
